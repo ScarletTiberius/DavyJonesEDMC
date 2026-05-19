@@ -166,10 +166,8 @@ def show_toast(header: str, subtext: str = "",
     _wrapper._send_rect(
         _ID_TOAST_BAR, _X, _Y_TOAST, _BAR_W, _BAR_H, fill=color, ttl=ttl,
     )
-    # Add a trailing space to coax the overlay into not kerning the last two glyphs together.
-    # The overlay's "large" font has tight kerning on certain pairs (LO, LU, etc.).
     _wrapper._send_text(
-        _ID_TOAST_TEXT, header + " ", COLOR_WHITE,
+        _ID_TOAST_TEXT, header, COLOR_WHITE,
         _X + _TEXT_PAD_X, _Y_TOAST + _TEXT_PAD_Y,
         ttl=ttl, size="large",
     )

@@ -15,7 +15,7 @@ PALETTE = {
     "bg":            "#0a0a0a",   # near-black main bg
     "bg_alt":        "#141414",   # alternating rows / subtle elevation
     "bg_card":       "#0f0f10",   # cards slightly different from bg
-    "bg_input":      "#050505",   # entry/spinbox bg — slightly darker
+    "bg_input":      "#1a1520",   # entry/spinbox bg — dark purple-tinted, visibly distinct from bg
     "fg":            "#d8d8d8",   # body text — off-white
     "fg_dim":        "#5a5a5a",   # labels / metadata
     "accent_red":    "#c8102e",   # blood red — headers, dividers, primary accents
@@ -24,7 +24,7 @@ PALETTE = {
     "accent_amber":  "#ffb347",   # credits / value
     "accent_green":  "#4eff8c",   # PvE / success
     "accent_pink":   "#ff5577",   # PvP
-    "border":        "#2a0508",   # subtle dark red border
+    "border":        "#4a1020",   # dark red border — visible against bg_input
     "border_hot":    "#c8102e",   # emphasised border
 }
 

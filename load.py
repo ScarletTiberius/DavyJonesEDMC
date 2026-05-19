@@ -14,8 +14,8 @@ import threading
 import time
 import tkinter as tk
 from datetime import datetime, timezone
-from tkinter import messagebox
-from typing import Optional, Dict, Any, Tuple
+from tkinter import messagebox, ttk
+from typing import Optional, Dict, Any, List, Tuple
 from urllib import request as urlrequest, error as urlerror
 
 import myNotebook as nb  # type: ignore  # provided by EDMC at runtime
@@ -29,6 +29,7 @@ except ImportError:
 from cargo_window import CargoReportWindow
 from stats_window import StatsWindow
 from add_client_window import AddClientWindow
+from clogging_window import CloggingWindow
 import overlay
 
 PLUGIN_NAME = "DavyJones"
@@ -139,6 +140,55 @@ def _load_icon(size: int) -> Optional[tk.PhotoImage]:
         return None
 
 
+def _load_skull_icon(target_px: int = 20) -> Optional[tk.PhotoImage]:
+    """Load target.png and scale it down to ~target_px square for use in a button."""
+    path = os.path.join(ICON_DIR, "target.png")
+    if not os.path.exists(path):
+        return None
+    try:
+        img = tk.PhotoImage(file=path)
+        factor = max(1, img.width() // target_px)
+        return img.subsample(factor) if factor > 1 else img
+    except tk.TclError:
+        logger.exception("Failed to load skull icon")
+        return None
+
+
+class _Tooltip:
+    """Minimal hover tooltip for any tk widget."""
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self._widget = widget
+        self._text = text
+        self._tip: Optional[tk.Toplevel] = None
+        widget.bind("<Enter>", self._show, add=True)
+        widget.bind("<Leave>", self._hide, add=True)
+
+    def _show(self, event=None) -> None:
+        if self._tip:
+            return
+        x = self._widget.winfo_rootx() + 10
+        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        self._tip = tw = tk.Toplevel(self._widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tk.Label(
+            tw, text=self._text,
+            bg="#ffffe0", fg="#222222",
+            relief="solid", borderwidth=1,
+            font=("TkDefaultFont", 8), padx=4, pady=2,
+        ).pack()
+
+    def _hide(self, event=None) -> None:
+        if self._tip:
+            self._tip.destroy()
+            self._tip = None
+
+
+def _add_tooltip(widget: tk.Widget, text: str) -> None:
+    _Tooltip(widget, text)
+
+
 class PluginState:
     """Holds runtime state. EDMC plugins are module-level, so we wrap state here."""
 
@@ -147,25 +197,36 @@ class PluginState:
         self.api_key: str = ""
         self.cmdr: Optional[str] = None
         self.current_cargo: Dict[str, dict] = {}  # commodity_name -> count
-        self.scan_history: list = []  # List[str] of CMDR names, most recent first, deduped
+        self.current_system: Optional[str] = None
+        self.current_station: Optional[str] = None
+        # List[Dict] — see _upsert_scan_entry for the schema. Session-scoped; never persisted.
+        self.scan_history: List[Dict[str, Any]] = []
         # Dedup: (cmdr_name, monotonic_timestamp) of the last scan we API-checked.
         # Re-checking the same CMDR within this window is suppressed.
         self.last_lookup: Optional[Tuple[str, float]] = None
 
+        # Cached profile from GET /api/me — populated on startup and after prefs save
+        self._profile: Optional[Dict[str, Any]] = None
+
         # UI elements (created in plugin_app)
         self.status_label: Optional[tk.Label] = None
+        self.network_label: Optional[tk.Label] = None
         self.scan_label: Optional[tk.Label] = None
+        self.clogger_label: Optional[tk.Label] = None
         self.report_button: Optional[tk.Button] = None
         self.stats_button: Optional[tk.Button] = None
         self.add_client_button: Optional[tk.Button] = None
+        self.clogger_button: Optional[tk.Button] = None
         self.parent_frame: Optional[tk.Frame] = None
         self.main_icon_image: Optional[tk.PhotoImage] = None  # GC pin
         self.prefs_icon_image: Optional[tk.PhotoImage] = None  # GC pin
+        self.skull_icon_image: Optional[tk.PhotoImage] = None  # GC pin
 
         # Settings UI (created in plugin_prefs)
         self.api_base_var: Optional[tk.StringVar] = None
         self.api_key_var: Optional[tk.StringVar] = None
         self.show_api_key_var: Optional[tk.BooleanVar] = None
+        self.prefs_test_label: Optional[tk.Label] = None
         # Overlay toggles — master + 4 per-event. Persisted via EDMC config.
         self.overlay_master_var: Optional[tk.BooleanVar] = None
         self.overlay_scan_var: Optional[tk.BooleanVar] = None
@@ -231,7 +292,6 @@ def plugin_start3(plugin_dir: str) -> str:
     state.api_key = config.get_str("davyjones_api_key") or ""
     _load_overlay_prefs()
     logger.info(f"{PLUGIN_NAME} v{PLUGIN_VERSION} loaded")
-    # Probe overlay availability on startup so it's reflected in the UI
     if overlay.is_available():
         logger.info("EDMCModernOverlay detected — HUD messages enabled")
     else:
@@ -253,13 +313,20 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     state.main_icon_image = _load_icon(64)
     if state.main_icon_image is not None:
         icon_label = tk.Label(frame, image=state.main_icon_image)
-        icon_label.grid(row=0, column=0, rowspan=3, sticky="nw", padx=(2, 6), pady=2)
+        icon_label.grid(row=0, column=0, rowspan=4, sticky="nw", padx=(2, 6), pady=(8, 2))
         text_col_start = 1
     else:
         text_col_start = 0
 
     state.status_label = tk.Label(frame, text="DavyJones: ready", anchor="w")
     state.status_label.grid(row=0, column=text_col_start, columnspan=2, sticky="we")
+
+    # Network connection info — populated async after startup/prefs save
+    state.network_label = tk.Label(
+        frame, text="○ not connected", anchor="w", fg="gray",
+        font=("TkDefaultFont", 8),
+    )
+    state.network_label.grid(row=1, column=text_col_start, columnspan=2, sticky="we")
 
     # Show overlay availability subtly so users know whether HUD messages will appear
     overlay_text = "HUD: on" if overlay.is_available() else "HUD: off (install EDMCModernOverlay)"
@@ -268,40 +335,68 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
         frame, text=overlay_text, anchor="w", fg=overlay_color,
         font=("TkDefaultFont", 8),
     )
-    overlay_label.grid(row=1, column=text_col_start, columnspan=2, sticky="we")
+    overlay_label.grid(row=2, column=text_col_start, columnspan=2, sticky="we")
 
     tk.Label(frame, text="Last scan:", anchor="w").grid(
-        row=2, column=text_col_start, sticky="w"
+        row=3, column=text_col_start, sticky="w"
     )
     state.scan_label = tk.Label(frame, text="—", anchor="w", fg="gray")
-    state.scan_label.grid(row=2, column=text_col_start + 1, sticky="we")
+    state.scan_label.grid(row=3, column=text_col_start + 1, sticky="we")
 
-    # All three actions on a single row — fits at default EDMC width
-    button_row = tk.Frame(frame)
-    button_row.grid(
-        row=3, column=0, columnspan=text_col_start + 2, sticky="we", pady=(4, 0)
+    state.clogger_label = tk.Label(frame, text="", anchor="w", fg="orange")
+    # Not gridded initially — shown only when a clogger flag is active (see _set_clogger)
+
+    # Action row: My Plunder | Report Plunder | Add Client | [skull] Report Clogger
+    action_row = tk.Frame(frame)
+    action_row.grid(
+        row=5, column=0, columnspan=text_col_start + 2, sticky="we", pady=(4, 0)
     )
+
     state.stats_button = tk.Button(
-        button_row, text="My Stats", command=_open_stats_window
+        action_row, text="My Plunder", command=_open_stats_window
     )
     state.stats_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
-    state.add_client_button = tk.Button(
-        button_row, text="Add Client", command=_open_add_client_window
-    )
-    state.add_client_button.pack(side="left", expand=True, fill="x", padx=(2, 2))
+    _add_tooltip(state.stats_button, "your ledger entries and stats")
+
     state.report_button = tk.Button(
-        button_row, text="Report Plunder", command=_open_report_window
+        action_row, text="Report Plunder", command=_open_report_window
     )
-    state.report_button.pack(side="left", expand=True, fill="x", padx=(2, 0))
+    state.report_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
+    _add_tooltip(state.report_button, "Tell us about your spoils, cmdr")
+
+    state.add_client_button = tk.Button(
+        action_row, text="Add Client", command=_open_add_client_window
+    )
+    state.add_client_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
+    _add_tooltip(state.add_client_button, "Give players that donated a pass")
+
+    state.skull_icon_image = _load_skull_icon()
+    if state.skull_icon_image:
+        state.clogger_button = tk.Button(
+            action_row, image=state.skull_icon_image, command=_open_clogging_window
+        )
+    else:
+        state.clogger_button = tk.Button(
+            action_row, text="⊕", command=_open_clogging_window
+        )
+    state.clogger_button.pack(side="left", padx=(0, 0))
+    _add_tooltip(state.clogger_button, "Report Clogger — report players that combat logged")
 
     if theme is not None:
-        for btn in (state.stats_button, state.add_client_button, state.report_button):
+        for btn in (state.stats_button, state.add_client_button,
+                    state.report_button, state.clogger_button):
             try:
                 theme.register(btn)
             except Exception:
                 logger.exception("Failed to register button with EDMC theme")
 
     frame.columnconfigure(text_col_start + 1, weight=1)
+
+    # Fetch profile after the frame (and its labels) are fully wired into the widget tree.
+    # plugin_start3 runs before plugin_app, so the label widget doesn't exist yet there.
+    if state.api_key:
+        frame.after(0, _fetch_profile_async)
+
     return frame
 
 
@@ -318,91 +413,111 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
     state.overlay_plunder_var = tk.BooleanVar(value=_overlay_enabled["plunder"])
     state.overlay_client_var = tk.BooleanVar(value=_overlay_enabled["client"])
 
-    # Header: logo + plugin name/version
+    # --- Header: logo + plugin name/version ---
     header = nb.Frame(frame)
-    header.grid(row=0, column=0, columnspan=2, sticky="we", padx=8, pady=(8, 12))
+    header.grid(row=0, column=0, columnspan=2, sticky="we", padx=8, pady=(8, 8))
 
     state.prefs_icon_image = _load_icon(64)
     if state.prefs_icon_image is not None:
         nb.Label(header, image=state.prefs_icon_image).grid(
             row=0, column=0, rowspan=2, sticky="w", padx=(0, 12)
         )
-
     nb.Label(header, text="Davy Jones Locker").grid(row=0, column=1, sticky="w")
-    nb.Label(
-        header, text=f"EDMC plugin v{PLUGIN_VERSION}"
-    ).grid(row=1, column=1, sticky="w")
+    nb.Label(header, text=f"EDMC plugin v{PLUGIN_VERSION}").grid(row=1, column=1, sticky="w")
 
-    nb.Label(frame, text="API base URL:").grid(row=1, column=0, sticky="w", padx=8, pady=4)
-    tk.Entry(frame, textvariable=state.api_base_var, width=40).grid(
-        row=1, column=1, sticky="we", padx=8, pady=4
+    # --- API Connection ---
+    ttk.Separator(frame, orient="horizontal").grid(
+        row=1, column=0, columnspan=2, sticky="we", padx=8, pady=(8, 2)
+    )
+    nb.Label(frame, text="API Connection").grid(
+        row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 4)
     )
 
-    nb.Label(frame, text="API key:").grid(row=2, column=0, sticky="w", padx=8, pady=4)
+    nb.Label(frame, text="Base URL:").grid(row=3, column=0, sticky="w", padx=8, pady=4)
+    tk.Entry(frame, textvariable=state.api_base_var, width=40).grid(
+        row=3, column=1, sticky="we", padx=8, pady=4
+    )
+
+    nb.Label(frame, text="API key:").grid(row=4, column=0, sticky="w", padx=8, pady=4)
     state.api_key_entry = tk.Entry(frame, textvariable=state.api_key_var, width=40, show="*")
-    state.api_key_entry.grid(row=2, column=1, sticky="we", padx=8, pady=4)
+    state.api_key_entry.grid(row=4, column=1, sticky="we", padx=8, pady=4)
 
     nb.Checkbutton(
         frame, text="Show API key",
         variable=state.show_api_key_var,
         command=_toggle_api_key_visibility,
-    ).grid(row=3, column=1, sticky="w", padx=8, pady=(0, 4))
+    ).grid(row=5, column=1, sticky="w", padx=8, pady=(0, 2))
+
+    # Test connection — nb.Frame with grid() children
+    test_area = nb.Frame(frame)
+    test_area.grid(row=6, column=1, sticky="w", padx=8, pady=(0, 4))
+    tk.Button(
+        test_area, text="Test Connection",
+        command=_test_connection_from_prefs,
+    ).grid(row=0, column=0, sticky="w")
+    state.prefs_test_label = nb.Label(
+        test_area, text="", wraplength=400, justify="left",
+    )
+    state.prefs_test_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
     nb.Label(
         frame,
         text="Get your API key from the Davy Jones Discord. Beta opt-in.",
-    ).grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 16))
+    ).grid(row=7, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 4))
 
-    # --- Overlay toggles ---
-    nb.Label(frame, text="Overlay:").grid(
-        row=5, column=0, sticky="nw", padx=8, pady=4
+    # --- Overlay ---
+    ttk.Separator(frame, orient="horizontal").grid(
+        row=8, column=0, columnspan=2, sticky="we", padx=8, pady=(8, 2)
     )
-    overlay_toggles = nb.Frame(frame)
-    overlay_toggles.grid(row=5, column=1, sticky="w", padx=8, pady=4)
+    nb.Label(frame, text="Overlay").grid(
+        row=9, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 4)
+    )
+
     nb.Checkbutton(
-        overlay_toggles, text="Enable overlay (master)",
+        frame, text="Enable overlay (master)",
         variable=state.overlay_master_var,
-    ).grid(row=0, column=0, sticky="w")
+    ).grid(row=10, column=0, columnspan=2, sticky="w", padx=8)
     nb.Checkbutton(
-        overlay_toggles, text="Show scan results (known clients)",
+        frame, text="Show scan results (known clients)",
         variable=state.overlay_scan_var,
-    ).grid(row=1, column=0, sticky="w", padx=(20, 0))
+    ).grid(row=11, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
-        overlay_toggles, text="Show new-target scans (not in client list)",
+        frame, text="Show new-target scans (not in client list)",
         variable=state.overlay_newtarget_var,
-    ).grid(row=2, column=0, sticky="w", padx=(20, 0))
+    ).grid(row=12, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
-        overlay_toggles, text="Show plunder confirmations",
+        frame, text="Show plunder confirmations",
         variable=state.overlay_plunder_var,
-    ).grid(row=3, column=0, sticky="w", padx=(20, 0))
+    ).grid(row=13, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
-        overlay_toggles, text="Show client-add confirmations",
+        frame, text="Show client-add confirmations",
         variable=state.overlay_client_var,
-    ).grid(row=4, column=0, sticky="w", padx=(20, 0))
+    ).grid(row=14, column=0, columnspan=2, sticky="w", padx=(28, 8))
 
-    # --- HUD test section ---
-    nb.Label(frame, text="Overlay test:").grid(
-        row=6, column=0, sticky="nw", padx=8, pady=4
-    )
-    # Plain tk.Frame here — nb.Frame has its own internal grid layout and won't allow pack()
-    test_buttons = tk.Frame(frame)
-    test_buttons.grid(row=6, column=1, sticky="w", padx=8, pady=4)
-    tk.Button(
-        test_buttons, text="Test scan (known client)",
-        command=_test_overlay_known,
-    ).pack(side="left", padx=(0, 4))
-    tk.Button(
-        test_buttons, text="Test scan (cooldown)",
-        command=_test_overlay_cooldown,
-    ).pack(side="left", padx=4)
-    tk.Button(
-        test_buttons, text="Test scan (new target)",
-        command=_test_overlay_newtarget,
-    ).pack(side="left", padx=4)
-    tk.Button(
-        test_buttons, text="Test plunder toast",
-        command=_test_overlay_toast,
-    ).pack(side="left", padx=4)
+    nb.Label(frame, text="Test:").grid(row=15, column=0, sticky="nw", padx=8, pady=(8, 0))
+    scan_test_row = tk.Frame(frame)
+    scan_test_row.grid(row=15, column=1, sticky="w", padx=8, pady=(8, 2))
+    tk.Button(scan_test_row, text="Scan: known client",
+              command=_test_overlay_known).pack(side="left", padx=(0, 4))
+    tk.Button(scan_test_row, text="Scan: cooldown",
+              command=_test_overlay_cooldown).pack(side="left", padx=4)
+    tk.Button(scan_test_row, text="Scan: new target",
+              command=_test_overlay_newtarget).pack(side="left", padx=4)
+    tk.Button(scan_test_row, text="Scan: clogger",
+              command=_test_overlay_clogger).pack(side="left", padx=4)
+    tk.Button(scan_test_row, text="Scan: client + clogger",
+              command=_test_overlay_client_clogger).pack(side="left", padx=4)
+
+    toast_test_row = tk.Frame(frame)
+    toast_test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(2, 4))
+    tk.Button(toast_test_row, text="Toast: plunder ok",
+              command=_test_overlay_toast_plunder_ok).pack(side="left", padx=(0, 4))
+    tk.Button(toast_test_row, text="Toast: plunder fail",
+              command=_test_overlay_toast_plunder_fail).pack(side="left", padx=4)
+    tk.Button(toast_test_row, text="Toast: client added",
+              command=_test_overlay_toast_client_added).pack(side="left", padx=4)
+    tk.Button(toast_test_row, text="Toast: duplicate",
+              command=_test_overlay_toast_duplicate).pack(side="left", padx=4)
 
     nb.Label(
         frame,
@@ -411,7 +526,17 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
             "regardless of the per-event toggles above. Useful to verify position and styling."
         ),
         wraplength=480, justify="left",
-    ).grid(row=7, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=17, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+
+    # Attribution for third-party icons
+    ttk.Separator(frame, orient="horizontal").grid(
+        row=18, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
+    )
+    nb.Label(
+        frame,
+        text="Crosshair icons created by Creaticca Creative Agency · Flaticon (flaticon.com/free-icons/crosshair)",
+        foreground="gray",
+    ).grid(row=19, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     frame.columnconfigure(1, weight=1)
     return frame
@@ -424,64 +549,130 @@ def _toggle_api_key_visibility() -> None:
     state.api_key_entry.config(show="" if state.show_api_key_var.get() else "*")
 
 
-def _test_overlay_known() -> None:
-    """Fire a sample 'known client' scan message via the overlay."""
-    if not overlay.is_available():
-        messagebox.showinfo(
-            "DavyJones",
-            "Overlay not detected. Install EDMCModernOverlay to use HUD messages."
-        )
+def _test_connection_from_prefs() -> None:
+    """Test the API key/base currently entered in the prefs UI (not yet saved)."""
+    if not state.api_base_var or not state.api_key_var or not state.prefs_test_label:
         return
-    overlay.show_scan_result(
-        "TEST CMDR", "KNOWN CLIENT",
-        subtext="robbed 3x - last 8 days ago",
-        color=overlay.COLOR_GREEN,
-    )
+    base = state.api_base_var.get().rstrip("/") or API_BASE_DEFAULT
+    key = state.api_key_var.get().strip()
+    if not key:
+        state.prefs_test_label.config(text="✗  No API key entered.", foreground="red")
+        return
+    state.prefs_test_label.config(text="testing…", foreground="gray")
+
+    def worker():
+        try:
+            req = urlrequest.Request(
+                base + "/me",
+                headers={
+                    "X-API-Key": key,
+                    "Accept": "application/json",
+                    "User-Agent": f"DavyJonesEDMC/{PLUGIN_VERSION}",
+                },
+                method="GET",
+            )
+            with urlrequest.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                profile = json.loads(resp.read().decode("utf-8") or "{}")
+            cmdr = profile.get("displayName") or profile.get("cmdr") or "?"
+            guild = profile.get("guild") or "?"
+            key_info = profile.get("key") or {}
+            key_name = key_info.get("name", "—")
+            created = _fmt_relative_time(key_info.get("createdAt"))
+            expires_raw = key_info.get("expiresAt")
+            expires = _fmt_relative_time(expires_raw) if expires_raw else "never"
+            msg = (
+                f"✓  {cmdr}  ·  {guild}\n"
+                f"    Key: \"{key_name}\"  ·  created {created}  ·  expires {expires}"
+            )
+            if state.prefs_test_label:
+                state.prefs_test_label.after(
+                    0, lambda m=msg: state.prefs_test_label.config(text=m, foreground="green")
+                )
+        except urlerror.HTTPError as e:
+            err = _parse_api_error(e.code, e.read() if e.fp else b"")
+            msg = f"✗  {err.message}"
+            if state.prefs_test_label:
+                state.prefs_test_label.after(
+                    0, lambda m=msg: state.prefs_test_label.config(text=m, foreground="red")
+                )
+        except Exception as e:
+            msg = f"✗  connection error: {e}"
+            if state.prefs_test_label:
+                state.prefs_test_label.after(
+                    0, lambda m=msg: state.prefs_test_label.config(text=m, foreground="red")
+                )
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _test_overlay_known() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 3x - last 8 days ago", color=overlay.COLOR_GREEN)
 
 
 def _test_overlay_cooldown() -> None:
-    """Fire a sample 'on cooldown' scan message via the overlay."""
     if not overlay.is_available():
-        messagebox.showinfo(
-            "DavyJones",
-            "Overlay not detected. Install EDMCModernOverlay to use HUD messages."
-        )
+        _overlay_not_available_msg()
         return
-    overlay.show_scan_result(
-        "TEST CMDR", "ON COOLDOWN",
-        subtext="last robbed 2 hours ago",
-        color=overlay.COLOR_RED,
-    )
+    overlay.show_scan_result("TEST CMDR", "ON COOLDOWN", subtext="last robbed 2 hours ago", color=overlay.COLOR_AMBER)
+
+
+def _test_overlay_clogger() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 8 (3 report(s))", color=overlay.COLOR_RED)
+
+
+def _test_overlay_client_clogger() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="robbed 2x + score 8", color=overlay.COLOR_RED)
 
 
 def _test_overlay_newtarget() -> None:
-    """Fire a sample 'new target / not in client list' scan message via the overlay."""
     if not overlay.is_available():
-        messagebox.showinfo(
-            "DavyJones",
-            "Overlay not detected. Install EDMCModernOverlay to use HUD messages."
-        )
+        _overlay_not_available_msg()
         return
-    overlay.show_scan_result(
-        "TEST CMDR", "NEW TARGET",
-        subtext="not in client list",
-        color=overlay.COLOR_BLUE,
+    overlay.show_scan_result("TEST CMDR", "NEW TARGET", subtext="no record found", color=overlay.COLOR_BLUE)
+
+
+def _overlay_not_available_msg() -> None:
+    messagebox.showinfo(
+        "DavyJones",
+        "Overlay not detected. Install EDMCModernOverlay to use HUD messages.",
     )
 
 
-def _test_overlay_toast() -> None:
-    """Fire a sample plunder confirmation toast via the overlay."""
+def _test_overlay_toast_plunder_ok() -> None:
     if not overlay.is_available():
-        messagebox.showinfo(
-            "DavyJones",
-            "Overlay not detected. Install EDMCModernOverlay to use HUD messages."
-        )
+        _overlay_not_available_msg()
         return
-    overlay.show_toast(
-        "PLUNDER LOGGED",
-        subtext="47t across 3 item(s) (PvP)",
-        color=overlay.COLOR_GREEN,
-    )
+    overlay.show_toast("PLUNDER LOGGED", subtext="47t across 3 item(s) (PvP)", color=overlay.COLOR_GREEN)
+
+
+def _test_overlay_toast_plunder_fail() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_toast("PLUNDER FAILED", subtext="HTTP 500", color=overlay.COLOR_RED)
+
+
+def _test_overlay_toast_client_added() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_toast("CLIENT ADDED", subtext="TEST CMDR (hatchbreak)", color=overlay.COLOR_GREEN)
+
+
+def _test_overlay_toast_duplicate() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_toast("ALREADY IN COOLDOWN", subtext="TEST CMDR", color=overlay.COLOR_AMBER)
 
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
@@ -506,6 +697,11 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
             _overlay_enabled[key] = value
             _set_bool_pref(f"davyjones_overlay_{key}", value)
     _set_status("Settings saved")
+    # Re-fetch profile with the (possibly changed) key/base
+    if state.api_key:
+        _fetch_profile_async()
+    else:
+        _set_network_label("○ no API key", color="gray")
 
 
 def journal_entry(
@@ -518,6 +714,8 @@ def journal_entry(
 ) -> Optional[str]:
     """Called by EDMC for every journal event."""
     state.cmdr = cmdr
+    state.current_system = system or None
+    state.current_station = station or None
     event = entry.get("event")
 
     if event == "ShipTargeted":
@@ -533,11 +731,12 @@ def journal_entry(
 # ---------------------------------------------------------------------------
 
 def _handle_ship_targeted(entry: Dict[str, Any]) -> None:
-    """ShipTargeted fires multiple times as scan stages complete. For human commanders,
-    PilotName / PilotName_Localised appear at ScanStage 2 — not 3 like for NPCs."""
+    """ShipTargeted fires at each scan stage.
+    Stage 2 gives PilotName (CMDR name); Stage 3 adds PilotRank (combat rank)."""
     if not entry.get("TargetLocked"):
         return
-    if entry.get("ScanStage", 0) < 2:
+    stage = entry.get("ScanStage", 0)
+    if stage < 2:
         return
     pilot_name = entry.get("PilotName") or ""
     if not pilot_name.startswith("$cmdr_decorate:#name="):
@@ -548,19 +747,52 @@ def _handle_ship_targeted(entry: Dict[str, Any]) -> None:
     cmdr_name = pilot_name.replace("$cmdr_decorate:#name=", "").rstrip(";").strip()
     if not cmdr_name:
         return
-    # Add to scan history: most recent first, dedup, cap at 50
-    if cmdr_name in state.scan_history:
-        state.scan_history.remove(cmdr_name)
-    state.scan_history.insert(0, cmdr_name)
-    state.scan_history = state.scan_history[:50]
 
-    # Suppress repeated API lookups for the same CMDR within 30 seconds.
-    # ShipTargeted fires at multiple scan stages; re-checking the same name is wasteful.
-    now = time.monotonic()
-    if state.last_lookup and state.last_lookup[0] == cmdr_name and (now - state.last_lookup[1]) < 30:
-        return
-    state.last_lookup = (cmdr_name, now)
-    _lookup_client_async(cmdr_name)
+    if stage == 2:
+        _upsert_scan_entry(cmdr_name)
+        # Suppress repeated API lookups for the same CMDR within 30 seconds.
+        # ShipTargeted fires at multiple scan stages; re-checking the same name is wasteful.
+        now = time.monotonic()
+        if state.last_lookup and state.last_lookup[0] == cmdr_name and (now - state.last_lookup[1]) < 30:
+            return
+        state.last_lookup = (cmdr_name, now)
+        _lookup_client_async(cmdr_name)
+    elif stage == 3:
+        pilot_rank = entry.get("PilotRank")
+        if pilot_rank:
+            record = get_scanned_cmdr(cmdr_name)
+            if record is not None:
+                record["combat_rank"] = pilot_rank
+
+
+def _upsert_scan_entry(cmdr_name: str) -> None:
+    """Add a new scan-history entry or refresh an existing one in place."""
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    existing = get_scanned_cmdr(cmdr_name)
+    if existing is not None:
+        existing["system"] = state.current_system
+        existing["station"] = state.current_station
+        existing["scanned_at"] = now_iso
+    else:
+        if len(state.scan_history) >= 50:
+            oldest = min(range(len(state.scan_history)), key=lambda i: state.scan_history[i]["scanned_at"])
+            state.scan_history.pop(oldest)
+        state.scan_history.append({
+            "cmdr": cmdr_name,
+            "combat_rank": None,
+            "system": state.current_system,
+            "station": state.current_station,
+            "scanned_at": now_iso,
+        })
+
+
+def get_scanned_cmdr(name: str) -> Optional[Dict[str, Any]]:
+    """Return the scan-history record for *name*, or None. Case-insensitive."""
+    lower = name.lower()
+    for record in state.scan_history:
+        if record["cmdr"].lower() == lower:
+            return record
+    return None
 
 
 def _handle_cargo(entry: Dict[str, Any]) -> None:
@@ -629,12 +861,11 @@ def _lookup_client_worker(cmdr_name: str) -> None:
         result = _api_get(f"/clients/{urlrequest.quote(cmdr_name)}")
     except ApiError as e:
         if e.status == 404:
-            _set_scan(cmdr_name, "not in client list", color="gray")
-            # Show on overlay only if user opted in — otherwise this fires on every scan
+            _set_scan(cmdr_name, "unknown", color="gray")
             if _overlay_on("newtarget"):
                 overlay.show_scan_result(
                     cmdr_name, "NEW TARGET",
-                    subtext="not in client list",
+                    subtext="no record found",
                     color=overlay.COLOR_BLUE,
                 )
             return
@@ -659,31 +890,67 @@ def _lookup_client_worker(cmdr_name: str) -> None:
         return
 
     if not result:
-        _set_scan(cmdr_name, "not in client list", color="gray")
+        _set_scan(cmdr_name, "unknown", color="gray")
         return
 
-    on_cooldown = bool(result.get("onCooldown"))
-    last_robbed = _fmt_relative_time(result.get("lastRobbedAt"))
-    times_robbed = result.get("timesRobbed", 0)
+    client = result.get("client") or {}
+    clogger = result.get("clogger") or {}
 
-    if on_cooldown:
-        msg = f"⛔ ON COOLDOWN — last robbed {last_robbed}"
-        color = "red"
-        overlay_header = "ON COOLDOWN"
-        overlay_subtext = f"last robbed {last_robbed}"
-        overlay_color = overlay.COLOR_RED
-    else:
-        msg = f"✓ client (robbed {times_robbed}×, last {last_robbed})"
-        color = "green"
-        overlay_header = "KNOWN CLIENT"
-        overlay_subtext = f"robbed {times_robbed}x - last {last_robbed}"
-        overlay_color = overlay.COLOR_GREEN
-    _set_scan(cmdr_name, msg, color=color)
-    if _overlay_on("scan"):
-        overlay.show_scan_result(
-            cmdr_name, overlay_header,
-            subtext=overlay_subtext, color=overlay_color,
+    on_cooldown = False
+    last_robbed = ""
+    times_robbed = 0
+    if client:
+        on_cooldown = bool(client.get("onCooldown"))
+        last_robbed = _fmt_relative_time(client.get("lastRobbedAt"))
+        times_robbed = client.get("timesRobbed", 0)
+
+    clogger_score = clogger.get("score", 0) if clogger else 0
+    is_clogger = clogger_score > 0
+
+    # --- EDMC panel ---
+    # Clogger overrides scan-label colour even when client info is present.
+    if client:
+        client_msg = (
+            f"⛔ ON COOLDOWN — last robbed {last_robbed}" if on_cooldown
+            else f"✓ client (robbed {times_robbed}×, last {last_robbed})"
         )
+        panel_color = "red" if is_clogger else ("orange" if on_cooldown else "green")
+        _set_scan(cmdr_name, client_msg, color=panel_color)
+    else:
+        _set_scan(cmdr_name, "no client record", color="gray")
+
+    if is_clogger:
+        if clogger_score >= 15:
+            _set_clogger(f"⚠ CLOGGER (severe, score {clogger_score})")
+        elif clogger_score >= 5:
+            _set_clogger(f"⚠ clogger (moderate, score {clogger_score})")
+        else:
+            _set_clogger(f"clogger (mild, score {clogger_score})")
+
+    # --- Overlay: clogger (red) > cooldown (amber) > known client (green) ---
+    if is_clogger:
+        if clogger_score >= 15:
+            ov_header = "CLOGGER — SEVERE"
+        elif clogger_score >= 5:
+            ov_header = "CLOGGER"
+        else:
+            ov_header = "CLOGGER — MILD"
+        if client:
+            ov_sub = (
+                f"cooldown active + score {clogger_score}" if on_cooldown
+                else f"robbed {times_robbed}x + score {clogger_score}"
+            )
+        else:
+            ov_sub = f"score {clogger_score} ({clogger.get('reportCount', 0)} report(s))"
+        if _overlay_on("scan"):
+            overlay.show_scan_result(cmdr_name, ov_header, subtext=ov_sub, color=overlay.COLOR_RED)
+    elif client:
+        if on_cooldown:
+            if _overlay_on("scan"):
+                overlay.show_scan_result(cmdr_name, "ON COOLDOWN", subtext=f"last robbed {last_robbed}", color=overlay.COLOR_AMBER)
+        else:
+            if _overlay_on("scan"):
+                overlay.show_scan_result(cmdr_name, "KNOWN CLIENT", subtext=f"robbed {times_robbed}x - last {last_robbed}", color=overlay.COLOR_GREEN)
 
 
 def submit_plunder(payload: Dict[str, Any]) -> Tuple[bool, str]:
@@ -788,6 +1055,52 @@ def submit_add_client(cmdr_name: str, complied: bool) -> Tuple[bool, str]:
     return True, f"Added {cmdr_name} to the client list."
 
 
+def submit_clogging_report(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    """Called from CloggingWindow. Synchronous from caller's perspective (window runs it in a thread)."""
+    if not state.api_key:
+        return False, "No API key configured."
+    try:
+        _api_post("/clogging", payload)
+    except ApiError as e:
+        if e.status == 409:
+            return False, e.message  # server's wording is already descriptive
+        return False, e.user_message()
+    except Exception as e:
+        return False, str(e)
+    return True, f"Report submitted for {payload.get('targetCmdr', 'CMDR')}."
+
+
+def fetch_clogging_reports() -> List[Dict[str, Any]]:
+    """Called from CloggingWindow. The window already runs this in a thread."""
+    if not state.api_key:
+        raise RuntimeError("No API key configured.")
+    try:
+        result = _api_get("/me/clogging-reports")
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict):
+            return result.get("reports") or []
+        return []
+    except ApiError as e:
+        raise RuntimeError(e.user_message()) from e
+
+
+def update_clogging_report(
+    report_id: int, proof_url: Optional[str], shared: bool
+) -> Tuple[bool, str]:
+    """Called from CloggingWindow. The window already runs this in a thread."""
+    if not state.api_key:
+        return False, "No API key configured."
+    payload = {"proofUrl": proof_url, "shared": shared}
+    try:
+        _api_put(f"/clogging/{report_id}", payload)
+    except ApiError as e:
+        return False, e.user_message()
+    except Exception as e:
+        return False, str(e)
+    return True, "Report updated."
+
+
 def _api_get(path: str) -> Optional[Dict[str, Any]]:
     req = urlrequest.Request(
         state.api_base + path,
@@ -827,6 +1140,27 @@ def _api_post(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         raise _parse_api_error(e.code, e.read() if e.fp else b"") from e
 
 
+def _api_put(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    data = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(
+        state.api_base + path,
+        data=data,
+        headers={
+            "X-API-Key": state.api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": f"DavyJonesEDMC/{PLUGIN_VERSION}",
+        },
+        method="PUT",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else None
+    except urlerror.HTTPError as e:
+        raise _parse_api_error(e.code, e.read() if e.fp else b"") from e
+
+
 # ---------------------------------------------------------------------------
 # UI helpers (thread-safe via after())
 # ---------------------------------------------------------------------------
@@ -836,12 +1170,53 @@ def _set_status(text: str) -> None:
         state.status_label.after(0, lambda: state.status_label.config(text=f"DavyJones: {text}"))
 
 
+def _set_network_label(text: str, color: str = "gray") -> None:
+    if state.network_label:
+        state.network_label.after(0, lambda t=text, c=color: state.network_label.config(text=t, fg=c))
+
+
+def _fetch_profile_async() -> None:
+    _set_network_label("● connecting…", color="gray")
+    threading.Thread(target=_fetch_profile_worker, daemon=True).start()
+
+
+def _fetch_profile_worker() -> None:
+    try:
+        profile = _api_get("/me")
+        state._profile = profile
+        if profile:
+            cmdr = profile.get("displayName") or profile.get("cmdr") or "?"
+            guild = profile.get("guild") or "unknown squadron"
+            _set_network_label(f"● {cmdr}  ·  {guild}", color="green")
+        else:
+            _set_network_label("○ no profile returned", color="gray")
+    except ApiError as e:
+        _set_network_label(f"○ auth failed ({e.status})", color="red")
+    except Exception:
+        logger.exception("Profile fetch failed")
+        _set_network_label("○ not connected", color="gray")
+
+
 def _set_scan(cmdr_name: str, text: str, color: str = "black") -> None:
     if state.scan_label:
         state.scan_label.after(
             0,
             lambda: state.scan_label.config(text=f"{cmdr_name}: {text}", fg=color),
         )
+    if state.clogger_label:
+        state.clogger_label.after(0, lambda: state.clogger_label.grid_remove())
+
+
+def _set_clogger(text: str) -> None:
+    if not state.clogger_label:
+        return
+    col = 1 if state.main_icon_image else 0
+
+    def _update():
+        state.clogger_label.config(text=text)
+        state.clogger_label.grid(row=4, column=col, columnspan=2, sticky="we")
+
+    state.clogger_label.after(0, _update)
 
 def _open_report_window() -> None:
     if not state.parent_frame:
@@ -890,4 +1265,22 @@ def _open_add_client_window() -> None:
         cmdr=state.cmdr or "",
         scan_history=list(state.scan_history),
         submit_callback=submit_add_client,
+    )
+
+
+def _open_clogging_window() -> None:
+    if not state.parent_frame:
+        return
+    if not state.api_key:
+        messagebox.showwarning(
+            "DavyJones", "No API key configured. Set one in Settings → DavyJones."
+        )
+        return
+    CloggingWindow(
+        parent=state.parent_frame.winfo_toplevel(),
+        cmdr=state.cmdr or "",
+        scan_history=list(state.scan_history),
+        submit_callback=submit_clogging_report,
+        fetch_reports_callback=fetch_clogging_reports,
+        update_callback=update_clogging_report,
     )

@@ -21,6 +21,9 @@ Opens a cargo window pre-populated from your current hold. Mark what you plunder
 **Add client**
 Submit a CMDR directly to the squadron client list. Recently scanned commanders from your current session appear as one-click suggestions so you don't have to type names manually.
 
+**Clogger reporting**
+Report commanders who combat-logged during an encounter. Attach proof (YouTube, Twitch, Imgur, Discord, Reddit, Streamable), set visibility to guild-only or shared across all guilds, and review or update your past reports from the same window.
+
 **Stats dashboard**
 Your personal ledger: total tonnage, profit, most-looted commodity, PvP/PvE breakdown, full entry history, and monthly summaries. Mirrors the dashboard on davyjones.org.
 
@@ -59,6 +62,7 @@ This plugin sends data to `davyjones.org`:
 
 - CMDR names you scan in-game (for client list lookups)
 - Your cargo selection and CMDR name when you submit a plunder report
+- CMDR name, reason, and optional proof URL when you submit a clogger report
 - Nothing is sent until you've entered an API key, and all submissions are manual
 
 No data is sent automatically. If you do not want any scan data leaving your machine, do not install this plugin.
@@ -72,6 +76,7 @@ DavyJones/
 ├── cargo_window.py       # Plunder report window
 ├── stats_window.py       # Stats dashboard window
 ├── add_client_window.py  # Add client window
+├── clogging_window.py    # Clogger report window
 ├── dj_theme.py           # Shared palette and widget factories
 └── icons/                # Plugin icons (red, white, orange variants)
 ```

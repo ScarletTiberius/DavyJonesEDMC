@@ -7,7 +7,7 @@ Surfaces recently scanned CMDRs as quick-pick suggestions — saves typing and r
 import threading
 import tkinter as tk
 from tkinter import messagebox
-from typing import Callable, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import dj_theme as t
 
@@ -17,7 +17,7 @@ class AddClientWindow(tk.Toplevel):
         self,
         parent: tk.Misc,
         cmdr: str,
-        scan_history: List[str],
+        scan_history: List[Dict[str, Any]],
         submit_callback: Callable[[str, bool], Tuple[bool, str]],
     ):
         super().__init__(parent)
@@ -111,13 +111,16 @@ class AddClientWindow(tk.Toplevel):
 
     def _render_history(self, parent: tk.Misc) -> None:
         body = t.make_scrollable(parent)
-        for r, cmdr_name in enumerate(self.scan_history):
+        for r, rec in enumerate(self.scan_history):
+            cmdr_name = rec["cmdr"]
+            rank = rec.get("combat_rank")
             row_bg = t.PALETTE["bg_alt"] if r % 2 else t.PALETTE["bg"]
             row = tk.Frame(body, bg=row_bg)
             row.pack(fill="x", padx=4)
 
+            label_text = f"CMDR {cmdr_name}" + (f"  [{rank}]" if rank else "")
             tk.Label(
-                row, text=f"CMDR {cmdr_name}", anchor="w",
+                row, text=label_text, anchor="w",
                 fg=t.PALETTE["fg"], bg=row_bg, font=t.FONT_BODY,
             ).pack(side="left", padx=(4, 0), pady=4)
 
