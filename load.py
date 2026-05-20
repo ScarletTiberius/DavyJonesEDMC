@@ -732,7 +732,10 @@ def journal_entry(
 
 def _handle_ship_targeted(entry: Dict[str, Any]) -> None:
     """ShipTargeted fires at each scan stage.
-    Stage 2 gives PilotName (CMDR name); Stage 3 adds PilotRank (combat rank)."""
+    Stage 2 gives PilotName (CMDR name); Stage 3 adds PilotRank (combat rank).
+    In practice the game sometimes skips straight to stage 3 (close range / fast scan),
+    so we trigger the API lookup at either stage and rely on the 30-second cooldown to
+    deduplicate when both stages do fire."""
     if not entry.get("TargetLocked"):
         return
     stage = entry.get("ScanStage", 0)
@@ -748,21 +751,22 @@ def _handle_ship_targeted(entry: Dict[str, Any]) -> None:
     if not cmdr_name:
         return
 
-    if stage == 2:
-        _upsert_scan_entry(cmdr_name)
-        # Suppress repeated API lookups for the same CMDR within 30 seconds.
-        # ShipTargeted fires at multiple scan stages; re-checking the same name is wasteful.
-        now = time.monotonic()
-        if state.last_lookup and state.last_lookup[0] == cmdr_name and (now - state.last_lookup[1]) < 30:
-            return
-        state.last_lookup = (cmdr_name, now)
-        _lookup_client_async(cmdr_name)
-    elif stage == 3:
+    _upsert_scan_entry(cmdr_name)
+
+    if stage == 3:
         pilot_rank = entry.get("PilotRank")
         if pilot_rank:
             record = get_scanned_cmdr(cmdr_name)
             if record is not None:
                 record["combat_rank"] = pilot_rank
+
+    # Trigger lookup at stage 2 or 3; cooldown deduplicates if both stages fire
+    now = time.monotonic()
+    if state.last_lookup and state.last_lookup[0] == cmdr_name and (now - state.last_lookup[1]) < 30:
+        return
+    state.last_lookup = (cmdr_name, now)
+    logger.debug(f"ShipTargeted stage {stage}: looking up {cmdr_name!r}")
+    _lookup_client_async(cmdr_name)
 
 
 def _upsert_scan_entry(cmdr_name: str) -> None:
