@@ -735,20 +735,30 @@ def _handle_ship_targeted(entry: Dict[str, Any]) -> None:
     Stage 2 gives PilotName (CMDR name); Stage 3 adds PilotRank (combat rank).
     In practice the game sometimes skips straight to stage 3 (close range / fast scan),
     so we trigger the API lookup at either stage and rely on the 30-second cooldown to
-    deduplicate when both stages do fire."""
+    deduplicate when both stages do fire.
+    Stage 3 occasionally arrives without PilotName (the game doesn't repeat it when stage 2
+    already sent it). In that case we fall back to last_lookup to store the rank."""
     if not entry.get("TargetLocked"):
         return
     stage = entry.get("ScanStage", 0)
     if stage < 2:
         return
+
     pilot_name = entry.get("PilotName") or ""
-    if not pilot_name.startswith("$cmdr_decorate:#name="):
-        # Only act on actual commanders, not NPCs. NPCs have names like
-        # "$npc_name_decorate:#name=..." or "$ShipName_..." etc.
-        return
-    # Format is "$cmdr_decorate:#name=ROHAN DEX;" — strip the wrapper
-    cmdr_name = pilot_name.replace("$cmdr_decorate:#name=", "").rstrip(";").strip()
+    if pilot_name.startswith("$cmdr_decorate:#name="):
+        # Format is "$cmdr_decorate:#name=ROHAN DEX;" — strip the wrapper
+        cmdr_name = pilot_name.replace("$cmdr_decorate:#name=", "").rstrip(";").strip() or None
+    else:
+        cmdr_name = None
+
+    # Stage 3 sometimes arrives without PilotName. If we have PilotRank and a recent
+    # last_lookup, use that CMDR name so the rank is not silently dropped.
+    if cmdr_name is None and stage == 3 and entry.get("PilotRank") and state.last_lookup:
+        if (time.monotonic() - state.last_lookup[1]) < 30:
+            cmdr_name = state.last_lookup[0]
+
     if not cmdr_name:
+        # NPC or unrecognised format — skip
         return
 
     _upsert_scan_entry(cmdr_name)
