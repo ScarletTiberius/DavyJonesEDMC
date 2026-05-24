@@ -77,6 +77,14 @@ class AddClientWindow(tk.Toplevel):
             ("hatchbreak", "HATCHBREAK", t.PALETTE["accent_pink"]),
         ]).pack(anchor="w", fill="x", pady=(0, 14))
 
+        # --- Buttons — packed before the expandable history so they anchor to the bottom ---
+        btns = t.frame(outer)
+        btns.pack(side="bottom", fill="x", pady=(14, 0))
+        t.button(btns, "CANCEL", self.destroy,
+                 accent=t.PALETTE["fg_dim"]).pack(side="right", padx=(6, 0))
+        t.button(btns, "ADD", self._submit,
+                 accent=t.PALETTE["accent_red"]).pack(side="right")
+
         # --- Scan history ---
         history_header = t.frame(outer)
         history_header.pack(fill="x")
@@ -100,14 +108,6 @@ class AddClientWindow(tk.Toplevel):
             ).pack(pady=20)
         else:
             self._render_history(outer)
-
-        # --- Buttons ---
-        btns = t.frame(outer)
-        btns.pack(fill="x", pady=(14, 0))
-        t.button(btns, "CANCEL", self.destroy,
-                 accent=t.PALETTE["fg_dim"]).pack(side="right", padx=(6, 0))
-        t.button(btns, "ADD", self._submit,
-                 accent=t.PALETTE["accent_red"]).pack(side="right")
 
     def _render_history(self, parent: tk.Misc) -> None:
         body = t.make_scrollable(parent)
