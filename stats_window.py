@@ -93,7 +93,7 @@ class StatsWindow(tk.Toplevel):
             wrap, text=msg, fg=t.PALETTE["fg_dim"], font=t.FONT_BODY,
             wraplength=500, justify="center",
         ).pack()
-        t.button(wrap, "CLOSE", self.destroy).pack(pady=20)
+        t.button(wrap, "CLOSE", self.destroy, accent=t.PALETTE["fg"]).pack(pady=20)
 
     # ------------------------------------------------------------------
     def _render(self, data: Dict[str, Any]) -> None:
@@ -121,7 +121,7 @@ class StatsWindow(tk.Toplevel):
 
         footer = t.frame(outer)
         footer.pack(fill="x", pady=(10, 0))
-        t.button(footer, "CLOSE", self.destroy).pack(side="right")
+        t.button(footer, "CLOSE", self.destroy, accent=t.PALETTE["fg"]).pack(side="right")
 
     # ------------------------------------------------------------------
     def _render_headlines(self, parent: tk.Misc, totals: Dict[str, Any]) -> None:
