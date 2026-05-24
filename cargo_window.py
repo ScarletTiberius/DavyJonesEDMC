@@ -88,7 +88,7 @@ class CargoReportWindow(tk.Toplevel):
         btns = t.frame(outer)
         btns.pack(fill="x", pady=(14, 0))
         t.button(btns, "CANCEL", self.destroy,
-                 accent=t.PALETTE["fg_dim"]).pack(side="right", padx=(6, 0))
+                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
         t.button(btns, "SUBMIT", self._submit,
                  accent=t.PALETTE["accent_red"]).pack(side="right")
 

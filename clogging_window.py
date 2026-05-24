@@ -134,7 +134,7 @@ class CloggingWindow(tk.Toplevel):
         btns = t.frame(body)
         btns.pack(fill="x", pady=(12, 0))
         t.button(btns, "CANCEL", self.destroy,
-                 accent=t.PALETTE["fg_dim"]).pack(side="right", padx=(6, 0))
+                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
         t.button(btns, "SUBMIT REPORT", self._submit_new,
                  accent=t.PALETTE["accent_red"]).pack(side="right")
 
