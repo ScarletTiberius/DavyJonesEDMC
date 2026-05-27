@@ -81,6 +81,10 @@ DavyJones/
 └── icons/                # Plugin icons (red, white, orange variants)
 ```
 
+## Documentation
+
+- [Screen guide](docs/screens.md) — walkthrough of every window with screenshots
+
 ---
 
 > **Disclaimer:** This project is an independent community tool and is not affiliated with, endorsed by, or connected to Elite Dangerous, Frontier Developments, or any of their subsidiaries. Elite Dangerous is a trademark of Frontier Developments plc.
