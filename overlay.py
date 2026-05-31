@@ -22,8 +22,8 @@ logger = logging.getLogger("DavyJones.overlay")
 _X = 50
 _Y_SCAN = 100      # CMDR scan: header bar starts here
 _Y_TOAST = 290     # Plunder/add-client toast: leaves room for taller scan block (bar + 2 lines)
-_TTL_SCAN = 6      # seconds
-_TTL_TOAST = 4     # seconds
+_ttl_scan = 6      # seconds — configurable via set_ttls()
+_ttl_toast = 4     # seconds — configurable via set_ttls()
 
 # Layout constants for the block header.
 # `size="large"` text needs more vertical room than I first allowed — the descender was clipping
@@ -128,6 +128,12 @@ def is_available() -> bool:
     return _wrapper.is_available()
 
 
+def set_ttls(scan: int, toast: int) -> None:
+    global _ttl_scan, _ttl_toast
+    _ttl_scan = max(1, scan)
+    _ttl_toast = max(1, toast)
+
+
 def show_scan_result(cmdr_name: str, state: str, subtext: str = "",
                      color: str = COLOR_GREEN) -> None:
     """Display a CMDR scan result as a 3-line block:
@@ -137,43 +143,44 @@ def show_scan_result(cmdr_name: str, state: str, subtext: str = "",
     The CMDR name gets the full bar to itself so it's the first thing the eye lands on."""
     name = (cmdr_name or "?").upper()
     _wrapper._send_rect(
-        _ID_SCAN_BAR, _X, _Y_SCAN, _BAR_W, _BAR_H, fill=color, ttl=_TTL_SCAN,
+        _ID_SCAN_BAR, _X, _Y_SCAN, _BAR_W, _BAR_H, fill=color, ttl=_ttl_scan,
     )
     _wrapper._send_text(
         _ID_SCAN_NAME, name, COLOR_WHITE,
         _X + _TEXT_PAD_X, _Y_SCAN + _TEXT_PAD_Y,
-        ttl=_TTL_SCAN, size="large",
+        ttl=_ttl_scan, size="large",
     )
     if state:
         _wrapper._send_text(
             _ID_SCAN_STATE, state, color,
             _X + _TEXT_PAD_X, _Y_SCAN + _STATE_Y_OFFSET,
-            ttl=_TTL_SCAN, size="normal",
+            ttl=_ttl_scan, size="normal",
         )
     if subtext:
         _wrapper._send_text(
             _ID_SCAN_DETAIL, subtext, COLOR_WHITE,
             _X + _TEXT_PAD_X, _Y_SCAN + _DETAIL_Y_OFFSET,
-            ttl=_TTL_SCAN, size="normal",
+            ttl=_ttl_scan, size="normal",
         )
 
 
 def show_toast(header: str, subtext: str = "",
-               color: str = COLOR_GREEN, ttl: int = _TTL_TOAST) -> None:
+               color: str = COLOR_GREEN, ttl: int = -1) -> None:
     """Brief notification — used for plunder/add-client confirmations and errors.
     Two-line layout: bar with title, dim subtext below. Simpler than scan because the title
     here is already an action verb ('PLUNDER LOGGED'), no separate state needed."""
+    effective_ttl = _ttl_toast if ttl < 0 else ttl
     _wrapper._send_rect(
-        _ID_TOAST_BAR, _X, _Y_TOAST, _BAR_W, _BAR_H, fill=color, ttl=ttl,
+        _ID_TOAST_BAR, _X, _Y_TOAST, _BAR_W, _BAR_H, fill=color, ttl=effective_ttl,
     )
     _wrapper._send_text(
         _ID_TOAST_TEXT, header, COLOR_WHITE,
         _X + _TEXT_PAD_X, _Y_TOAST + _TEXT_PAD_Y,
-        ttl=ttl, size="large",
+        ttl=effective_ttl, size="large",
     )
     if subtext:
         _wrapper._send_text(
             _ID_TOAST_SUB, subtext, color,
             _X + _TEXT_PAD_X, _Y_TOAST + _SUBTEXT_Y_OFFSET,
-            ttl=ttl, size="normal",
+            ttl=effective_ttl, size="normal",
         )

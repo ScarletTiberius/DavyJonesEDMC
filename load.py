@@ -234,6 +234,8 @@ class PluginState:
         self.overlay_newtarget_var: Optional[tk.BooleanVar] = None
         self.overlay_plunder_var: Optional[tk.BooleanVar] = None
         self.overlay_client_var: Optional[tk.BooleanVar] = None
+        self.overlay_ttl_scan_var: Optional[tk.StringVar] = None
+        self.overlay_ttl_toast_var: Optional[tk.StringVar] = None
         # Settings entry widget refs (so the Show-API-key toggle can flip them)
         self.api_key_entry: Optional[tk.Entry] = None
 
@@ -264,6 +266,14 @@ def _set_bool_pref(key: str, value: bool) -> None:
     config.set(key + "_set", 1)
 
 
+def _get_int_pref(key: str, default: int) -> int:
+    try:
+        raw = config.get_int(key)
+    except Exception:
+        return default
+    return raw if raw > 0 else default
+
+
 # Overlay toggle state cached in module-level vars for fast access on the hot path
 _overlay_enabled = {
     "master": True,
@@ -282,6 +292,10 @@ def _load_overlay_prefs() -> None:
     _overlay_enabled["newtarget"] = _get_bool_pref("davyjones_overlay_newtarget", False)
     _overlay_enabled["plunder"] = _get_bool_pref("davyjones_overlay_plunder", True)
     _overlay_enabled["client"] = _get_bool_pref("davyjones_overlay_client", True)
+    overlay.set_ttls(
+        _get_int_pref("davyjones_overlay_ttl_scan", 6),
+        _get_int_pref("davyjones_overlay_ttl_toast", 4),
+    )
 
 
 def _overlay_on(kind: str) -> bool:
@@ -416,6 +430,8 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
     state.overlay_newtarget_var = tk.BooleanVar(value=_overlay_enabled["newtarget"])
     state.overlay_plunder_var = tk.BooleanVar(value=_overlay_enabled["plunder"])
     state.overlay_client_var = tk.BooleanVar(value=_overlay_enabled["client"])
+    state.overlay_ttl_scan_var = tk.StringVar(value=str(_get_int_pref("davyjones_overlay_ttl_scan", 6)))
+    state.overlay_ttl_toast_var = tk.StringVar(value=str(_get_int_pref("davyjones_overlay_ttl_toast", 4)))
 
     # --- Header: logo + plugin name/version ---
     header = nb.Frame(frame)
@@ -502,9 +518,21 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
         variable=state.overlay_client_var,
     ).grid(row=15, column=0, columnspan=2, sticky="w", padx=(28, 8))
 
-    nb.Label(frame, text="Test:").grid(row=16, column=0, sticky="w", padx=8, pady=(8, 0))
+    nb.Label(frame, text="Duration (s):").grid(row=16, column=0, sticky="w", padx=8, pady=(6, 2))
+    dur_row = tk.Frame(frame)
+    dur_row.grid(row=16, column=1, sticky="w", padx=8, pady=(6, 2))
+    nb.Label(dur_row, text="Scan:").pack(side="left")
+    tk.Spinbox(dur_row, textvariable=state.overlay_ttl_scan_var,
+               from_=1, to=30, width=3).pack(side="left", padx=(4, 2))
+    nb.Label(dur_row, text="s").pack(side="left")
+    nb.Label(dur_row, text="Toast:").pack(side="left", padx=(12, 0))
+    tk.Spinbox(dur_row, textvariable=state.overlay_ttl_toast_var,
+               from_=1, to=30, width=3).pack(side="left", padx=(4, 2))
+    nb.Label(dur_row, text="s").pack(side="left")
+
+    nb.Label(frame, text="Test:").grid(row=17, column=0, sticky="w", padx=8, pady=(8, 0))
     test_row = tk.Frame(frame)
-    test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(8, 4))
+    test_row.grid(row=17, column=1, sticky="w", padx=8, pady=(8, 4))
 
     _test_var = tk.StringVar(value=_TEST_OVERLAY_OPTIONS[0][0])
     ttk.Combobox(
@@ -531,17 +559,17 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
             "regardless of the per-event toggles above. Useful to verify position and styling."
         ),
         wraplength=480, justify="left",
-    ).grid(row=17, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=18, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     # Attribution for third-party icons
     ttk.Separator(frame, orient="horizontal").grid(
-        row=18, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
+        row=19, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
     )
     nb.Label(
         frame,
         text="Crosshair icons created by Creaticca Creative Agency · Flaticon (flaticon.com/free-icons/crosshair)",
         foreground="gray",
-    ).grid(row=19, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=20, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     frame.columnconfigure(1, weight=1)
     return frame
@@ -715,6 +743,18 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
             value = bool(var.get())
             _overlay_enabled[key] = value
             _set_bool_pref(f"davyjones_overlay_{key}", value)
+    # Persist and apply overlay display durations
+    def _parse_ttl(var_name: str, default: int) -> int:
+        var = getattr(state, var_name, None)
+        try:
+            return max(1, int(var.get())) if var else default
+        except (ValueError, TypeError):
+            return default
+    ttl_scan = _parse_ttl("overlay_ttl_scan_var", 6)
+    ttl_toast = _parse_ttl("overlay_ttl_toast_var", 4)
+    config.set("davyjones_overlay_ttl_scan", ttl_scan)
+    config.set("davyjones_overlay_ttl_toast", ttl_toast)
+    overlay.set_ttls(ttl_scan, ttl_toast)
     _set_status("Settings saved")
     # Re-fetch profile with the (possibly changed) key/base
     if state.api_key:
