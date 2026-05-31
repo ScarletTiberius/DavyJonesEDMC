@@ -502,49 +502,46 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
         variable=state.overlay_client_var,
     ).grid(row=15, column=0, columnspan=2, sticky="w", padx=(28, 8))
 
-    nb.Label(frame, text="Test:").grid(row=16, column=0, sticky="nw", padx=8, pady=(8, 0))
-    scan_test_row = tk.Frame(frame)
-    scan_test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(8, 2))
-    tk.Button(scan_test_row, text="Scan: known client",
-              command=_test_overlay_known).pack(side="left", padx=(0, 4))
-    tk.Button(scan_test_row, text="Scan: cooldown",
-              command=_test_overlay_cooldown).pack(side="left", padx=4)
-    tk.Button(scan_test_row, text="Scan: new target",
-              command=_test_overlay_newtarget).pack(side="left", padx=4)
-    tk.Button(scan_test_row, text="Scan: clogger",
-              command=_test_overlay_clogger).pack(side="left", padx=4)
-    tk.Button(scan_test_row, text="Scan: client + clogger",
-              command=_test_overlay_client_clogger).pack(side="left", padx=4)
+    nb.Label(frame, text="Test:").grid(row=16, column=0, sticky="w", padx=8, pady=(8, 0))
+    test_row = tk.Frame(frame)
+    test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(8, 4))
 
-    toast_test_row = tk.Frame(frame)
-    toast_test_row.grid(row=17, column=1, sticky="w", padx=8, pady=(2, 4))
-    tk.Button(toast_test_row, text="Toast: plunder ok",
-              command=_test_overlay_toast_plunder_ok).pack(side="left", padx=(0, 4))
-    tk.Button(toast_test_row, text="Toast: plunder fail",
-              command=_test_overlay_toast_plunder_fail).pack(side="left", padx=4)
-    tk.Button(toast_test_row, text="Toast: client added",
-              command=_test_overlay_toast_client_added).pack(side="left", padx=4)
-    tk.Button(toast_test_row, text="Toast: duplicate",
-              command=_test_overlay_toast_duplicate).pack(side="left", padx=4)
+    _test_var = tk.StringVar(value=_TEST_OVERLAY_OPTIONS[0][0])
+    ttk.Combobox(
+        test_row,
+        textvariable=_test_var,
+        values=[name for name, _ in _TEST_OVERLAY_OPTIONS],
+        state="readonly",
+        width=26,
+    ).pack(side="left", padx=(0, 6))
+
+    def _fire_test():
+        selected = _test_var.get()
+        for name, fn in _TEST_OVERLAY_OPTIONS:
+            if name == selected:
+                fn()
+                break
+
+    tk.Button(test_row, text="Fire", command=_fire_test).pack(side="left")
 
     nb.Label(
         frame,
         text=(
-            "Test buttons fire sample messages via EDMCModernOverlay (if installed) "
+            "Fires a sample message via EDMCModernOverlay (if installed) "
             "regardless of the per-event toggles above. Useful to verify position and styling."
         ),
         wraplength=480, justify="left",
-    ).grid(row=18, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=17, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     # Attribution for third-party icons
     ttk.Separator(frame, orient="horizontal").grid(
-        row=19, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
+        row=18, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
     )
     nb.Label(
         frame,
         text="Crosshair icons created by Creaticca Creative Agency · Flaticon (flaticon.com/free-icons/crosshair)",
         foreground="gray",
-    ).grid(row=20, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=19, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     frame.columnconfigure(1, weight=1)
     return frame
@@ -681,6 +678,19 @@ def _test_overlay_toast_duplicate() -> None:
         _overlay_not_available_msg()
         return
     overlay.show_toast("ALREADY IN COOLDOWN", subtext="TEST CMDR", color=overlay.COLOR_AMBER)
+
+
+_TEST_OVERLAY_OPTIONS = [
+    ("Scan: known client",     _test_overlay_known),
+    ("Scan: cooldown",         _test_overlay_cooldown),
+    ("Scan: new target",       _test_overlay_newtarget),
+    ("Scan: clogger",          _test_overlay_clogger),
+    ("Scan: client + clogger", _test_overlay_client_clogger),
+    ("Toast: plunder ok",      _test_overlay_toast_plunder_ok),
+    ("Toast: plunder fail",    _test_overlay_toast_plunder_fail),
+    ("Toast: client added",    _test_overlay_toast_client_added),
+    ("Toast: duplicate",       _test_overlay_toast_duplicate),
+]
 
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
