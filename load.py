@@ -652,11 +652,25 @@ def _test_overlay_cooldown() -> None:
     overlay.show_scan_result("TEST CMDR", "ON COOLDOWN", subtext="last robbed 2 hours ago", color=overlay.COLOR_AMBER)
 
 
-def _test_overlay_clogger() -> None:
+def _test_clogger_mild() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "CLOGGER — MILD", subtext="score 3 (1 report(s))", color=overlay.COLOR_RED)
+
+
+def _test_clogger_moderate() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
     overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 8 (3 report(s))", color=overlay.COLOR_RED)
+
+
+def _test_clogger_severe() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "CLOGGER — SEVERE", subtext="score 20 (7 report(s))", color=overlay.COLOR_RED)
 
 
 def _test_overlay_client_clogger() -> None:
@@ -709,11 +723,13 @@ def _test_overlay_toast_duplicate() -> None:
 
 
 _TEST_OVERLAY_OPTIONS = [
-    ("Scan: known client",     _test_overlay_known),
-    ("Scan: cooldown",         _test_overlay_cooldown),
-    ("Scan: new target",       _test_overlay_newtarget),
-    ("Scan: clogger",          _test_overlay_clogger),
-    ("Scan: client + clogger", _test_overlay_client_clogger),
+    ("Scan: known client",        _test_overlay_known),
+    ("Scan: cooldown",            _test_overlay_cooldown),
+    ("Scan: new target",          _test_overlay_newtarget),
+    ("Scan: clogger (mild)",      _test_clogger_mild),
+    ("Scan: clogger (moderate)",  _test_clogger_moderate),
+    ("Scan: clogger (severe)",    _test_clogger_severe),
+    ("Scan: client + clogger",    _test_overlay_client_clogger),
     ("Toast: plunder ok",      _test_overlay_toast_plunder_ok),
     ("Toast: plunder fail",    _test_overlay_toast_plunder_fail),
     ("Toast: client added",    _test_overlay_toast_client_added),
@@ -994,18 +1010,18 @@ def _lookup_client_worker(cmdr_name: str) -> None:
 
     if is_clogger:
         if clogger_score >= 15:
-            _set_clogger(f"⚠ CLOGGER (severe, score {clogger_score})")
+            _set_clogger(f"⚠ CLOGGER — SEVERE (score {clogger_score})", color="red")
         elif clogger_score >= 5:
-            _set_clogger(f"⚠ clogger (moderate, score {clogger_score})")
+            _set_clogger(f"⚠ CLOGGER — moderate (score {clogger_score})", color="orange")
         else:
-            _set_clogger(f"clogger (mild, score {clogger_score})")
+            _set_clogger(f"⚠ CLOGGER — mild (score {clogger_score})", color="#e6a800")
 
     # --- Overlay: clogger (red) > cooldown (amber) > known client (green) ---
     if is_clogger:
         if clogger_score >= 15:
             ov_header = "CLOGGER — SEVERE"
         elif clogger_score >= 5:
-            ov_header = "CLOGGER"
+            ov_header = "CLOGGER — MODERATE"
         else:
             ov_header = "CLOGGER — MILD"
         if client:
@@ -1280,13 +1296,13 @@ def _set_scan(cmdr_name: str, text: str, color: str = "black") -> None:
         state.clogger_label.after(0, lambda: state.clogger_label.grid_remove())
 
 
-def _set_clogger(text: str) -> None:
+def _set_clogger(text: str, color: str = "orange") -> None:
     if not state.clogger_label:
         return
     col = 1 if state.main_icon_image else 0
 
     def _update():
-        state.clogger_label.config(text=text)
+        state.clogger_label.config(text=text, fg=color)
         state.clogger_label.grid(row=4, column=col, columnspan=2, sticky="we")
 
     state.clogger_label.after(0, _update)
