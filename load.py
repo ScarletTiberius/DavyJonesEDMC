@@ -227,9 +227,10 @@ class PluginState:
         self.api_key_var: Optional[tk.StringVar] = None
         self.show_api_key_var: Optional[tk.BooleanVar] = None
         self.prefs_test_label: Optional[tk.Label] = None
-        # Overlay toggles — master + 4 per-event. Persisted via EDMC config.
+        # Overlay toggles — master + 5 per-event. Persisted via EDMC config.
         self.overlay_master_var: Optional[tk.BooleanVar] = None
         self.overlay_scan_var: Optional[tk.BooleanVar] = None
+        self.overlay_clogger_var: Optional[tk.BooleanVar] = None
         self.overlay_newtarget_var: Optional[tk.BooleanVar] = None
         self.overlay_plunder_var: Optional[tk.BooleanVar] = None
         self.overlay_client_var: Optional[tk.BooleanVar] = None
@@ -267,6 +268,7 @@ def _set_bool_pref(key: str, value: bool) -> None:
 _overlay_enabled = {
     "master": True,
     "scan": True,
+    "clogger": True,
     "newtarget": False,  # default OFF — fires on every CMDR scan, noisier than other events
     "plunder": True,
     "client": True,
@@ -276,6 +278,7 @@ _overlay_enabled = {
 def _load_overlay_prefs() -> None:
     _overlay_enabled["master"] = _get_bool_pref("davyjones_overlay_master", True)
     _overlay_enabled["scan"] = _get_bool_pref("davyjones_overlay_scan", True)
+    _overlay_enabled["clogger"] = _get_bool_pref("davyjones_overlay_clogger", True)
     _overlay_enabled["newtarget"] = _get_bool_pref("davyjones_overlay_newtarget", False)
     _overlay_enabled["plunder"] = _get_bool_pref("davyjones_overlay_plunder", True)
     _overlay_enabled["client"] = _get_bool_pref("davyjones_overlay_client", True)
@@ -409,6 +412,7 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
     state.show_api_key_var = tk.BooleanVar(value=False)
     state.overlay_master_var = tk.BooleanVar(value=_overlay_enabled["master"])
     state.overlay_scan_var = tk.BooleanVar(value=_overlay_enabled["scan"])
+    state.overlay_clogger_var = tk.BooleanVar(value=_overlay_enabled["clogger"])
     state.overlay_newtarget_var = tk.BooleanVar(value=_overlay_enabled["newtarget"])
     state.overlay_plunder_var = tk.BooleanVar(value=_overlay_enabled["plunder"])
     state.overlay_client_var = tk.BooleanVar(value=_overlay_enabled["client"])
@@ -482,21 +486,25 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
         variable=state.overlay_scan_var,
     ).grid(row=11, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
+        frame, text="Show clogger scan results",
+        variable=state.overlay_clogger_var,
+    ).grid(row=12, column=0, columnspan=2, sticky="w", padx=(28, 8))
+    nb.Checkbutton(
         frame, text="Show new-target scans (not in client list)",
         variable=state.overlay_newtarget_var,
-    ).grid(row=12, column=0, columnspan=2, sticky="w", padx=(28, 8))
+    ).grid(row=13, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
         frame, text="Show plunder confirmations",
         variable=state.overlay_plunder_var,
-    ).grid(row=13, column=0, columnspan=2, sticky="w", padx=(28, 8))
+    ).grid(row=14, column=0, columnspan=2, sticky="w", padx=(28, 8))
     nb.Checkbutton(
         frame, text="Show client-add confirmations",
         variable=state.overlay_client_var,
-    ).grid(row=14, column=0, columnspan=2, sticky="w", padx=(28, 8))
+    ).grid(row=15, column=0, columnspan=2, sticky="w", padx=(28, 8))
 
-    nb.Label(frame, text="Test:").grid(row=15, column=0, sticky="nw", padx=8, pady=(8, 0))
+    nb.Label(frame, text="Test:").grid(row=16, column=0, sticky="nw", padx=8, pady=(8, 0))
     scan_test_row = tk.Frame(frame)
-    scan_test_row.grid(row=15, column=1, sticky="w", padx=8, pady=(8, 2))
+    scan_test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(8, 2))
     tk.Button(scan_test_row, text="Scan: known client",
               command=_test_overlay_known).pack(side="left", padx=(0, 4))
     tk.Button(scan_test_row, text="Scan: cooldown",
@@ -509,7 +517,7 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
               command=_test_overlay_client_clogger).pack(side="left", padx=4)
 
     toast_test_row = tk.Frame(frame)
-    toast_test_row.grid(row=16, column=1, sticky="w", padx=8, pady=(2, 4))
+    toast_test_row.grid(row=17, column=1, sticky="w", padx=8, pady=(2, 4))
     tk.Button(toast_test_row, text="Toast: plunder ok",
               command=_test_overlay_toast_plunder_ok).pack(side="left", padx=(0, 4))
     tk.Button(toast_test_row, text="Toast: plunder fail",
@@ -526,17 +534,17 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
             "regardless of the per-event toggles above. Useful to verify position and styling."
         ),
         wraplength=480, justify="left",
-    ).grid(row=17, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=18, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     # Attribution for third-party icons
     ttk.Separator(frame, orient="horizontal").grid(
-        row=18, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
+        row=19, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
     )
     nb.Label(
         frame,
         text="Crosshair icons created by Creaticca Creative Agency · Flaticon (flaticon.com/free-icons/crosshair)",
         foreground="gray",
-    ).grid(row=19, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=20, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     frame.columnconfigure(1, weight=1)
     return frame
@@ -687,6 +695,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     for key, var_name in [
         ("master", "overlay_master_var"),
         ("scan", "overlay_scan_var"),
+        ("clogger", "overlay_clogger_var"),
         ("newtarget", "overlay_newtarget_var"),
         ("plunder", "overlay_plunder_var"),
         ("client", "overlay_client_var"),
@@ -956,7 +965,7 @@ def _lookup_client_worker(cmdr_name: str) -> None:
             )
         else:
             ov_sub = f"score {clogger_score} ({clogger.get('reportCount', 0)} report(s))"
-        if _overlay_on("scan"):
+        if _overlay_on("clogger"):
             overlay.show_scan_result(cmdr_name, ov_header, subtext=ov_sub, color=overlay.COLOR_RED)
     elif client:
         if on_cooldown:
