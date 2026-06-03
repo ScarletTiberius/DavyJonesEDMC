@@ -18,16 +18,27 @@ jobs:
       - name: Build zip
         run: |          
           mkdir -p dist/build/DavyJones
-          cp -r . dist/build/DavyJones/ \
-            --exclude=.git \
-            --exclude=.github \
-            --exclude=__pycache__ \
-            --exclude=dist \
-            --exclude='*.pyc'
+          
+          rsync -av \
+          --exclude='.git' \
+          --exclude='.github' \
+          --exclude='__pycache__' \
+          --exclude='dist' \
+          --exclude='*.pyc' \
+          --exclude='.venv' \
+          --exclude='venv' \
+          --exclude='.pytest_cache' \
+          --exclude='.mypy_cache' \
+          ./ dist/build/DavyJones/
           
           # Zip from the build directory
           cd dist/build
           zip -r ../DavyJones-${{ github.ref_name }}.zip DavyJones/
+
+      - name: Verify archive
+        run: |
+          ls -lah dist
+          unzip -l dist/DavyJones-${{ github.ref_name }}.zip | head -50
 
       - name: Create release
         uses: softprops/action-gh-release@v2
