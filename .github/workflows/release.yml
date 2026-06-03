@@ -22,6 +22,8 @@ jobs:
           rsync -av \
           --exclude='.git' \
           --exclude='.github' \
+          --exclude='.gitignore' \
+          --exclude='.gitattributes' \
           --exclude='__pycache__' \
           --exclude='dist' \
           --exclude='*.pyc' \
