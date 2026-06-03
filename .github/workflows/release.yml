@@ -16,14 +16,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build zip
-        run: |
-          mkdir -p dist
-          zip -r dist/DavyJones-${{ github.ref_name }}.zip . \
-            --exclude "*.git*" \
-            --exclude "*__pycache__*" \
-            --exclude "*.pyc" \
-            --exclude "dist/*" \
-            --exclude ".github/*"
+        run: |          
+          mkdir -p dist/build/DavyJones
+          cp -r . dist/build/DavyJones/ \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=__pycache__ \
+            --exclude=dist \
+            --exclude='*.pyc'
+          
+          # Zip from the build directory
+          cd dist/build
+          zip -r ../DavyJones-${{ github.ref_name }}.zip DavyJones/
 
       - name: Create release
         uses: softprops/action-gh-release@v2
