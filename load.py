@@ -30,6 +30,7 @@ from cargo_window import CargoReportWindow
 from stats_window import StatsWindow
 from add_client_window import AddClientWindow
 from clogging_window import CloggingWindow
+import dj_theme as t
 import overlay
 
 PLUGIN_NAME = "DavyJones"
@@ -226,6 +227,9 @@ class PluginState:
         self.api_base_var: Optional[tk.StringVar] = None
         self.api_key_var: Optional[tk.StringVar] = None
         self.show_api_key_var: Optional[tk.BooleanVar] = None
+        self.theme_var: Optional[tk.StringVar] = None
+        self.theme_enabled_var: Optional[tk.BooleanVar] = None
+        self.theme_combo: Optional[ttk.Combobox] = None
         self.prefs_test_label: Optional[tk.Label] = None
         # Overlay toggles — master + 5 per-event. Persisted via EDMC config.
         self.overlay_master_var: Optional[tk.BooleanVar] = None
@@ -307,6 +311,9 @@ def plugin_start3(plugin_dir: str) -> str:
     """Called by EDMC on startup. Must return the plugin name."""
     state.api_base = config.get_str("davyjones_api_base") or API_BASE_DEFAULT
     state.api_key = config.get_str("davyjones_api_key") or ""
+    _chosen_theme = config.get_str("davyjones_theme") or t.DEFAULT_THEME
+    _theme_on = _get_bool_pref("davyjones_theme_enabled", True)
+    t.apply_theme(_chosen_theme if _theme_on else "native")
     _load_overlay_prefs()
     logger.info(f"{PLUGIN_NAME} v{PLUGIN_VERSION} loaded")
     if overlay.is_available():
@@ -561,15 +568,52 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> tk.Frame:
         wraplength=480, justify="left",
     ).grid(row=18, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
+    # --- Appearance ---
+    ttk.Separator(frame, orient="horizontal").grid(
+        row=19, column=0, columnspan=2, sticky="we", padx=8, pady=(8, 2)
+    )
+    nb.Label(frame, text="Appearance").grid(
+        row=20, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 4)
+    )
+
+    # Remember the user's chosen theme even while theming is off, so toggling it
+    # back on restores their pick rather than leaving them on Plain.
+    _chosen = config.get_str("davyjones_theme") or t.DEFAULT_THEME
+    state.theme_enabled_var = tk.BooleanVar(value=_get_bool_pref("davyjones_theme_enabled", True))
+    state.theme_var = tk.StringVar(value=t.label_for(_chosen))
+
+    nb.Checkbutton(
+        frame, text="Enable custom theme",
+        variable=state.theme_enabled_var,
+        command=_sync_theme_combo_state,
+    ).grid(row=21, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 2))
+
+    nb.Label(frame, text="Theme:").grid(row=22, column=0, sticky="w", padx=(28, 8), pady=4)
+    state.theme_combo = ttk.Combobox(
+        frame,
+        textvariable=state.theme_var,
+        values=[lbl for _, lbl in t.THEME_ORDER],
+        state="readonly",
+        width=26,
+    )
+    state.theme_combo.grid(row=22, column=1, sticky="w", padx=8, pady=4)
+    nb.Label(
+        frame,
+        text="Colour scheme for the DavyJones popup windows. Applies the next time a window is opened. "
+             "Uncheck to disable theming and follow your standard Windows colours instead.",
+        wraplength=480, justify="left",
+    ).grid(row=23, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 4))
+    _sync_theme_combo_state()  # grey out the dropdown if theming starts off
+
     # Attribution for third-party icons
     ttk.Separator(frame, orient="horizontal").grid(
-        row=19, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
+        row=24, column=0, columnspan=2, sticky="we", padx=8, pady=(4, 2)
     )
     nb.Label(
         frame,
         text="Crosshair icons created by Creaticca Creative Agency · Flaticon (flaticon.com/free-icons/crosshair)",
         foreground="gray",
-    ).grid(row=20, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
+    ).grid(row=25, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 8))
 
     frame.columnconfigure(1, weight=1)
     return frame
@@ -580,6 +624,15 @@ def _toggle_api_key_visibility() -> None:
     if not state.api_key_entry or not state.show_api_key_var:
         return
     state.api_key_entry.config(show="" if state.show_api_key_var.get() else "*")
+
+
+def _sync_theme_combo_state() -> None:
+    """Grey out the theme dropdown when custom theming is disabled."""
+    if not state.theme_combo or not state.theme_enabled_var:
+        return
+    state.theme_combo.config(
+        state="readonly" if state.theme_enabled_var.get() else "disabled"
+    )
 
 
 def _test_connection_from_prefs() -> None:
@@ -771,6 +824,15 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     config.set("davyjones_overlay_ttl_scan", ttl_scan)
     config.set("davyjones_overlay_ttl_toast", ttl_toast)
     overlay.set_ttls(ttl_scan, ttl_toast)
+    # Persist and apply the selected theme (takes effect on the next window open).
+    # The chosen theme is always remembered; when theming is disabled we just
+    # apply Plain instead, leaving the saved pick intact for when it's re-enabled.
+    if state.theme_var:
+        theme_key = t.key_for(state.theme_var.get())
+        config.set("davyjones_theme", theme_key)
+        theme_on = bool(state.theme_enabled_var.get()) if state.theme_enabled_var else True
+        _set_bool_pref("davyjones_theme_enabled", theme_on)
+        t.apply_theme(theme_key if theme_on else "native")
     _set_status("Settings saved")
     # Re-fetch profile with the (possibly changed) key/base
     if state.api_key:
