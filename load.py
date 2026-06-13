@@ -946,6 +946,17 @@ def get_scanned_cmdr(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _recent_scans_desc() -> List[Dict[str, Any]]:
+    """A copy of the scan history, most-recently-scanned first. scan_history is in
+    insertion order and re-scans refresh the timestamp in place without moving the
+    entry, so we sort by `scanned_at` (ISO UTC, lexicographically sortable)."""
+    return sorted(
+        state.scan_history,
+        key=lambda r: r.get("scanned_at", ""),
+        reverse=True,
+    )
+
+
 def _handle_cargo(entry: Dict[str, Any]) -> None:
     """Cargo events come in two flavors: with Inventory inline, or just a count
     referencing the Cargo.json file. We handle both."""
@@ -1414,7 +1425,7 @@ def _open_add_client_window() -> None:
     AddClientWindow(
         parent=state.parent_frame.winfo_toplevel(),
         cmdr=state.cmdr or "",
-        scan_history=list(state.scan_history),
+        scan_history=_recent_scans_desc(),
         submit_callback=submit_add_client,
     )
 
@@ -1430,7 +1441,7 @@ def _open_clogging_window() -> None:
     CloggingWindow(
         parent=state.parent_frame.winfo_toplevel(),
         cmdr=state.cmdr or "",
-        scan_history=list(state.scan_history),
+        scan_history=_recent_scans_desc(),
         submit_callback=submit_clogging_report,
         fetch_reports_callback=fetch_clogging_reports,
         update_callback=update_clogging_report,
