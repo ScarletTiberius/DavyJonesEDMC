@@ -226,9 +226,9 @@ FONT_TITLE  = ("Consolas", 14, "bold")
 # screen layouts can change between sessions, fresh-positioning is the safer default).
 _remembered_geometry: dict = {}
 
-def restore_or_position(window: tk.Toplevel, key: str, offset: int = 60) -> None:
+def restore_or_position(window: tk.Toplevel, key: str) -> None:
     """Open the window where it was last closed (this session). On first open,
-    position it near the parent. Call after the initial geometry("WxH") so
+    center it over the parent. Call after the initial geometry("WxH") so
     only x/y is overridden, not size."""
     saved = _remembered_geometry.get(key)
     if saved:
@@ -237,7 +237,7 @@ def restore_or_position(window: tk.Toplevel, key: str, offset: int = 60) -> None
             return
         except Exception:
             pass
-    position_near_parent(window, offset)
+    center_on_parent(window)
 
 def remember_geometry(window: tk.Toplevel, key: str) -> None:
     """Call from the window's destroy handler (or bind <Destroy>) to capture
@@ -448,23 +448,31 @@ def divider(parent: tk.Misc, color: Optional[str] = None, height: int = 1) -> tk
     return tk.Frame(parent, bg=color or PALETTE["accent_red_dim"], height=height)
 
 
-def position_near_parent(window: tk.Toplevel, offset: int = 60) -> None:
-    """Place a Toplevel just below-right of its parent (EDMC's main window), so it always
-    opens on whatever monitor EDMC is on. Call AFTER `geometry("WxH")` so the offset wins.
+def center_on_parent(window: tk.Toplevel) -> None:
+    """Center a Toplevel over its parent (EDMC's main window), so it always opens
+    centered on whatever monitor EDMC is on. Call AFTER `geometry("WxH")` so the
+    intended size is known and only x/y is overridden.
 
     tk's default behaviour is to center new Toplevels on the primary screen, which is wrong
     when EDMC lives on a secondary monitor. winfo_rootx/y are absolute screen coordinates
-    across the whole virtual desktop, so they cross monitors correctly."""
+    across the whole virtual desktop, so the centered position crosses monitors correctly."""
     try:
         parent = window.master
-        # winfo_rootx/y aren't reliable until the parent has been mapped; force an update
+        # winfo_* aren't reliable until widgets are mapped; force a geometry update first
         parent.update_idletasks()
-        x = parent.winfo_rootx() + offset
-        y = parent.winfo_rooty() + offset
+        window.update_idletasks()
+        # The size to center is the one just set via geometry("WxH"). The full string is
+        # "WxH±X±Y"; strip the position (which may be negative on multi-monitor layouts).
+        wxh = window.geometry().split("+")[0].split("-")[0]
+        ww, wh = (int(v) for v in wxh.split("x"))
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        x = px + (pw - ww) // 2
+        y = py + (ph - wh) // 2
         # Keep the size that was already set, only adjust position
         window.geometry(f"+{x}+{y}")
     except Exception:
-        # Positioning is a nicety; if winfo_root* fails (parent not mapped, etc.) skip silently
+        # Positioning is a nicety; if winfo_* fails (parent not mapped, etc.) skip silently
         pass
 
 
