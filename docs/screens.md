@@ -42,11 +42,23 @@ The master toggle controls all HUD messages. Individual toggles below it let you
 |---|---|
 | Enable overlay (master) | All HUD output on/off. |
 | Show scan results | Coloured banner when a scanned CMDR is found in the client list. |
+| Show clogger scan results | Banner when a scanned CMDR has an active clogger report. |
 | Show new-target scans | Banner for CMDRs not in the list. Off by default — fires on every scan. |
 | Show plunder confirmations | Toast when a plunder report is submitted. |
 | Show client-add confirmations | Toast when a client is added. |
 
-**Test buttons** fire sample messages via EDMCModernOverlay regardless of the per-event toggles. Use them to verify banner position and colour before going into the game.
+**Duration (s)** sets how long messages stay on screen: *Scan* controls the scan-result banner, *Toast* controls the confirmation toasts.
+
+**Test** fires a sample message — pick an event type from the dropdown and click **Fire**. Test messages bypass the per-event toggles above, so you can verify banner position and colour before going into the game.
+
+### Appearance
+
+| Setting | Description |
+|---|---|
+| Enable custom theme | On by default. Uncheck to disable theming and follow your standard Windows colours instead. When unchecked, the theme dropdown is greyed out (your chosen theme is remembered for when you turn it back on). |
+| Theme | Colour scheme for the DavyJones popup windows. Options: **Davy Jones** (default — black/blood-red), **Imperial Gold**, **Classic Amber**, **Elite Orange**, and **Plain** (neutral dark grey). |
+
+Theme changes apply the next time a window is opened — already-open windows aren't repainted. The EDMC main panel is unaffected; theming only covers the DavyJones popup windows.
 
 ---
 
