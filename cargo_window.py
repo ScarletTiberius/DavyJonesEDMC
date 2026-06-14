@@ -45,6 +45,17 @@ class CargoReportWindow(tk.Toplevel):
         outer = t.frame(self)
         outer.pack(fill="both", expand=True, padx=14, pady=14)
 
+        # --- Buttons ---
+        # Packed first with side="bottom" so the action bar always sits flush to the
+        # bottom of the window, even when the cargo list is short or the hold is empty.
+        # The cargo content below fills the space above it.
+        btns = t.frame(outer)
+        btns.pack(side="bottom", fill="x", pady=(14, 0))
+        t.button(btns, "CANCEL", self.destroy,
+                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
+        t.button(btns, "SUBMIT", self._submit,
+                 accent=t.PALETTE["accent_red"]).pack(side="right")
+
         # --- Title bar ---
         t.title_bar(outer, "☠", "REPORT PLUNDER", self.cmdr)
         t.divider(outer).pack(fill="x", pady=(2, 12))
@@ -83,14 +94,6 @@ class CargoReportWindow(tk.Toplevel):
             ).pack(pady=30)
         else:
             self._render_cargo_list(outer)
-
-        # --- Buttons ---
-        btns = t.frame(outer)
-        btns.pack(fill="x", pady=(14, 0))
-        t.button(btns, "CANCEL", self.destroy,
-                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
-        t.button(btns, "SUBMIT", self._submit,
-                 accent=t.PALETTE["accent_red"]).pack(side="right")
 
     def _render_cargo_list(self, parent: tk.Misc) -> None:
         # Column header
