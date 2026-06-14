@@ -39,7 +39,9 @@ class CloggingWindow(tk.Toplevel):
 
         self.configure(bg=t.PALETTE["bg"])
         self.geometry("540x660")
-        self.minsize(460, 500)
+        # Min height covers the NEW REPORT form's natural height (~621px) so no field
+        # ever clips; above it the REASON box expands to keep the buttons flush.
+        self.minsize(460, 630)
         self.transient(parent)
         self.grab_set()
         t.restore_or_position(self, key="clogging")
@@ -72,6 +74,16 @@ class CloggingWindow(tk.Toplevel):
         body = t.frame(page)
         body.pack(fill="both", expand=True, padx=6, pady=6)
 
+        # --- Buttons ---
+        # Packed first with side="bottom" so the action bar always sits flush to the
+        # bottom; the REASON box below expands to absorb any slack above it.
+        btns = t.frame(body)
+        btns.pack(side="bottom", fill="x", pady=(12, 0))
+        t.button(btns, "CANCEL", self.destroy,
+                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
+        t.button(btns, "SUBMIT REPORT", self._submit_new,
+                 accent=t.PALETTE["accent_red"]).pack(side="right")
+
         # --- Target CMDR ---
         t.label(body, text="TARGET COMMANDER",
                 fg=t.PALETTE["accent_red"], font=t.FONT_BADGE).pack(anchor="w", pady=(4, 2))
@@ -99,7 +111,7 @@ class CloggingWindow(tk.Toplevel):
                                 highlightthickness=1,
                                 highlightbackground=t.PALETTE["border"],
                                 highlightcolor=t.PALETTE["accent_red"])
-        reason_frame.pack(fill="x")
+        reason_frame.pack(fill="both", expand=True)
         self.reason_text = tk.Text(
             reason_frame, height=4, wrap="word",
             bg=t.PALETTE["bg_input"], fg=t.PALETTE["fg"],
@@ -107,7 +119,7 @@ class CloggingWindow(tk.Toplevel):
             relief=tk.FLAT, borderwidth=0,
             font=t.FONT_BODY,
         )
-        self.reason_text.pack(fill="x", padx=4, pady=4)
+        self.reason_text.pack(fill="both", expand=True, padx=4, pady=4)
 
         # --- Combat rank ---
         t.label(body, text="COMBAT RANK",
@@ -129,14 +141,6 @@ class CloggingWindow(tk.Toplevel):
             ("private",  "GUILD ONLY",            t.PALETTE["accent_cyan"]),
             ("shared",   "SHARE WITH ALL GUILDS", t.PALETTE["accent_amber"]),
         ]).pack(fill="x")
-
-        # --- Buttons ---
-        btns = t.frame(body)
-        btns.pack(fill="x", pady=(12, 0))
-        t.button(btns, "CANCEL", self.destroy,
-                 accent=t.PALETTE["fg"]).pack(side="right", padx=(6, 0))
-        t.button(btns, "SUBMIT REPORT", self._submit_new,
-                 accent=t.PALETTE["accent_red"]).pack(side="right")
 
     def _build_scan_picker(self, parent: tk.Frame) -> None:
         container = t.frame(parent)
@@ -245,6 +249,14 @@ class CloggingWindow(tk.Toplevel):
         body = t.frame(page)
         body.pack(fill="both", expand=True, padx=6, pady=6)
 
+        # --- Buttons ---
+        # Packed first with side="bottom" so the action bar always sits flush to the
+        # bottom; the reports list above expands to absorb any slack.
+        btns = t.frame(body)
+        btns.pack(side="bottom", fill="x", pady=(12, 0))
+        t.button(btns, "UPDATE REPORT", self._update_selected,
+                 accent=t.PALETTE["accent_red"]).pack(side="right")
+
         # Load row
         load_row = t.frame(body)
         load_row.pack(fill="x", pady=(4, 0))
@@ -254,9 +266,10 @@ class CloggingWindow(tk.Toplevel):
         self._load_status.pack(side="left", padx=10)
         t.divider(body).pack(fill="x", pady=(6, 0))
 
-        # Scrollable reports list — fixed height so the edit area always stays visible
+        # Scrollable reports list — expands to fill the space between the load row and
+        # the edit area, so the edit area + button bar stay anchored to the bottom.
         list_container = t.frame(body)
-        list_container.pack(fill="x")
+        list_container.pack(fill="both", expand=True)
 
         reports_canvas = tk.Canvas(list_container, height=200,
                                    bg=t.PALETTE["bg"], bd=0, highlightthickness=0)
@@ -271,7 +284,7 @@ class CloggingWindow(tk.Toplevel):
         self._reports_inner.bind("<Configure>", _configure)
         reports_canvas.bind("<Configure>", _configure)
         reports_canvas.configure(yscrollcommand=reports_sb.set)
-        reports_canvas.pack(side="left", fill="x", expand=True)
+        reports_canvas.pack(side="left", fill="both", expand=True)
         reports_sb.pack(side="right", fill="y")
 
         def _bind_wheel(e):
@@ -309,11 +322,6 @@ class CloggingWindow(tk.Toplevel):
             ("private", "GUILD ONLY",            t.PALETTE["accent_cyan"]),
             ("shared",  "SHARE WITH ALL GUILDS", t.PALETTE["accent_amber"]),
         ]).pack(fill="x")
-
-        btns = t.frame(body)
-        btns.pack(fill="x", pady=(12, 0))
-        t.button(btns, "UPDATE REPORT", self._update_selected,
-                 accent=t.PALETTE["accent_red"]).pack(side="right")
 
     def _load_reports(self) -> None:
         self._load_status.config(text="loading…", fg=t.PALETTE["fg_dim"])
