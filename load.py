@@ -709,28 +709,28 @@ def _test_clogger_mild() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "CLOGGER — MILD", subtext="score 3 (1 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(3), subtext="score 3 (1 report(s))", color=overlay.COLOR_RED)
 
 
 def _test_clogger_moderate() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 8 (3 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="score 8 (3 report(s))", color=overlay.COLOR_RED)
 
 
 def _test_clogger_severe() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "CLOGGER — SEVERE", subtext="score 20 (7 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(20), subtext="score 20 (7 report(s))", color=overlay.COLOR_RED)
 
 
 def _test_overlay_client_clogger() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="robbed 2x + score 8", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="robbed 2x + score 8", color=overlay.COLOR_RED)
 
 
 def _test_overlay_newtarget() -> None:
@@ -1007,6 +1007,21 @@ def _read_cargo_json() -> Optional[list]:
 # API calls
 # ---------------------------------------------------------------------------
 
+def _clogger_overlay_label(score: int) -> str:
+    """EDR-style plus-grade for clogger severity — more plusses = worse.
+    Mirrors EDR's `Outlaw++++` karma convention so the HUD reads at a glance.
+    The EDMC sidebar label keeps the spelled-out MILD/moderate/SEVERE wording."""
+    if score >= 15:
+        plus = "++++"
+    elif score >= 6:
+        plus = "+++"
+    elif score >= 3:
+        plus = "++"
+    else:
+        plus = "+"
+    return f"CLOGGER{plus}"
+
+
 def _lookup_client_async(cmdr_name: str) -> None:
     """Fire off the lookup in a background thread so we don't block journal processing."""
     if not state.api_key:
@@ -1091,12 +1106,7 @@ def _lookup_client_worker(cmdr_name: str) -> None:
 
     # --- Overlay: clogger (red) > cooldown (amber) > known client (green) ---
     if is_clogger:
-        if clogger_score >= 15:
-            ov_header = "CLOGGER — SEVERE"
-        elif clogger_score >= 5:
-            ov_header = "CLOGGER — MODERATE"
-        else:
-            ov_header = "CLOGGER — MILD"
+        ov_header = _clogger_overlay_label(clogger_score)
         if client:
             ov_sub = (
                 f"cooldown active + score {clogger_score}" if on_cooldown
