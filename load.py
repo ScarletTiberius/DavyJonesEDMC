@@ -695,7 +695,7 @@ def _test_overlay_known() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 3x - last 8 days ago", color=overlay.COLOR_GREEN)
+    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 3× · last 8 days ago", color=overlay.COLOR_GREEN)
 
 
 def _test_overlay_cooldown() -> None:
@@ -709,28 +709,28 @@ def _test_clogger_mild() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(3), subtext="score 3 (1 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(3), subtext="score 3 · 1 report(s)", color=overlay.COLOR_RED)
 
 
 def _test_clogger_moderate() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="score 8 (3 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="score 8 · 3 report(s)", color=overlay.COLOR_RED)
 
 
 def _test_clogger_severe() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(20), subtext="score 20 (7 report(s))", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(20), subtext="score 20 · 7 report(s)", color=overlay.COLOR_RED)
 
 
 def _test_overlay_client_clogger() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="robbed 2x + score 8", color=overlay.COLOR_RED)
+    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="robbed 2× · score 8", color=overlay.COLOR_RED)
 
 
 def _test_overlay_newtarget() -> None:
@@ -751,7 +751,7 @@ def _test_overlay_toast_plunder_ok() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_toast("PLUNDER LOGGED", subtext="47t across 3 item(s) (PvP)", color=overlay.COLOR_GREEN)
+    overlay.show_toast("PLUNDER LOGGED", subtext="47t · 3 item(s) · PvP", color=overlay.COLOR_GREEN)
 
 
 def _test_overlay_toast_plunder_fail() -> None:
@@ -1109,11 +1109,11 @@ def _lookup_client_worker(cmdr_name: str) -> None:
         ov_header = _clogger_overlay_label(clogger_score)
         if client:
             ov_sub = (
-                f"cooldown active + score {clogger_score}" if on_cooldown
-                else f"robbed {times_robbed}x + score {clogger_score}"
+                f"cooldown · score {clogger_score}" if on_cooldown
+                else f"robbed {times_robbed}× · score {clogger_score}"
             )
         else:
-            ov_sub = f"score {clogger_score} ({clogger.get('reportCount', 0)} report(s))"
+            ov_sub = f"score {clogger_score} · {clogger.get('reportCount', 0)} report(s)"
         if _overlay_on("clogger"):
             overlay.show_scan_result(cmdr_name, ov_header, subtext=ov_sub, color=overlay.COLOR_RED)
     elif client:
@@ -1122,7 +1122,7 @@ def _lookup_client_worker(cmdr_name: str) -> None:
                 overlay.show_scan_result(cmdr_name, "ON COOLDOWN", subtext=f"last robbed {last_robbed}", color=overlay.COLOR_AMBER)
         else:
             if _overlay_on("scan"):
-                overlay.show_scan_result(cmdr_name, "KNOWN CLIENT", subtext=f"robbed {times_robbed}x - last {last_robbed}", color=overlay.COLOR_GREEN)
+                overlay.show_scan_result(cmdr_name, "KNOWN CLIENT", subtext=f"robbed {times_robbed}× · last {last_robbed}", color=overlay.COLOR_GREEN)
 
 
 def submit_plunder(payload: Dict[str, Any]) -> Tuple[bool, str]:
@@ -1165,7 +1165,7 @@ def submit_plunder(payload: Dict[str, Any]) -> Tuple[bool, str]:
     if _overlay_on("plunder"):
         overlay.show_toast(
             "PLUNDER LOGGED",
-            subtext=f"{total_tonnage}t across {reported_count} item(s) ({kind})",
+            subtext=f"{total_tonnage}t · {reported_count} item(s) · {kind}",
             color=overlay.COLOR_GREEN,
         )
     return True, f"Plunder reported ({reported_count} item(s))."
