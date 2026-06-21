@@ -739,28 +739,32 @@ def _test_clogger_mild() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(3), subtext="score 3 · 1 report(s)", color=overlay.COLOR_RED)
+    grade_label, grade_color = _clogger_grade(3)
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 3 · 1 report(s)", color=overlay.COLOR_RED, extra_text=grade_label, extra_color=grade_color)
 
 
 def _test_clogger_moderate() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="score 8 · 3 report(s)", color=overlay.COLOR_RED)
+    grade_label, grade_color = _clogger_grade(8)
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 8 · 3 report(s)", color=overlay.COLOR_RED, extra_text=grade_label, extra_color=grade_color)
 
 
 def _test_clogger_severe() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(20), subtext="score 20 · 7 report(s)", color=overlay.COLOR_RED)
+    grade_label, grade_color = _clogger_grade(20)
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="score 20 · 7 report(s)", color=overlay.COLOR_RED, extra_text=grade_label, extra_color=grade_color)
 
 
 def _test_overlay_client_clogger() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="robbed 2× · score 8", color=overlay.COLOR_RED)
+    grade_label, grade_color = _clogger_grade(8)
+    overlay.show_scan_result("TEST CMDR", "CLOGGER", subtext="robbed 2× · score 8", color=overlay.COLOR_RED, extra_text=grade_label, extra_color=grade_color)
 
 
 def _test_overlay_low_compliance() -> None:
@@ -1045,19 +1049,19 @@ def _read_cargo_json() -> Optional[list]:
 # API calls
 # ---------------------------------------------------------------------------
 
-def _clogger_overlay_label(score: int) -> str:
-    """EDR-style plus-grade for clogger severity — more plusses = worse.
-    Mirrors EDR's `Outlaw++++` karma convention so the HUD reads at a glance.
-    The EDMC sidebar label keeps the spelled-out MILD/moderate/SEVERE wording."""
+def _clogger_grade(score: int) -> Tuple[str, str]:
+    """EDR-style severity grade for a clogger score: a spelled-out level with a `+`-suffix
+    (more plusses = worse, mirroring EDR's `Outlaw++++` karma convention) plus the overlay color
+    to render it in. Shown on the scan card's own line — parallel to the client compliance line —
+    rather than fused into the verdict, so the verdict stays a clean 'CLOGGER'. Severe is red;
+    lesser grades are amber (matching the spelled-out wording the EDMC sidebar already uses)."""
     if score >= 15:
-        plus = "++++"
-    elif score >= 6:
-        plus = "+++"
-    elif score >= 3:
-        plus = "++"
-    else:
-        plus = "+"
-    return f"CLOGGER{plus}"
+        return "SEVERE ++++", overlay.COLOR_RED
+    if score >= 6:
+        return "moderate +++", overlay.COLOR_AMBER
+    if score >= 3:
+        return "mild ++", overlay.COLOR_AMBER
+    return "mild +", overlay.COLOR_AMBER
 
 
 def _lookup_client_async(cmdr_name: str) -> None:
@@ -1152,7 +1156,7 @@ def _lookup_client_worker(cmdr_name: str) -> None:
 
     # --- Overlay: clogger (red) > cooldown (amber) > known client (green) ---
     if is_clogger:
-        ov_header = _clogger_overlay_label(clogger_score)
+        grade_label, grade_color = _clogger_grade(clogger_score)
         if client:
             ov_sub = (
                 f"cooldown · score {clogger_score}" if on_cooldown
@@ -1161,7 +1165,7 @@ def _lookup_client_worker(cmdr_name: str) -> None:
         else:
             ov_sub = f"score {clogger_score} · {clogger.get('reportCount', 0)} report(s)"
         if _overlay_on("clogger"):
-            overlay.show_scan_result(cmdr_name, ov_header, subtext=ov_sub, color=overlay.COLOR_RED)
+            overlay.show_scan_result(cmdr_name, "CLOGGER", subtext=ov_sub, color=overlay.COLOR_RED, extra_text=grade_label, extra_color=grade_color)
     elif client:
         if on_cooldown:
             if _overlay_on("scan"):
