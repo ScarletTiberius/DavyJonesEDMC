@@ -112,6 +112,36 @@ def _fmt_relative_time(iso_string: Any) -> str:
     return f"{years} year{'s' if years != 1 else ''} ago"
 
 
+def _fmt_compliance(score: Any) -> str:
+    """Format the client's complianceScore (a 0..1 fraction of past robberies they complied
+    with vs. hatchbroke) as a percentage label like '75% compliant'. Returns '' when the field
+    is absent (older records) or unparseable so callers can omit it cleanly."""
+    if score is None:
+        return ""
+    try:
+        pct = round(float(score) * 100)
+    except (ValueError, TypeError):
+        return ""
+    return f"{pct}% compliant"
+
+
+def _compliance_color(score: Any) -> str:
+    """Map a 0..1 complianceScore to a red/amber/green overlay color. High compliance (they
+    tend to hand over cargo) is green; low compliance (they tend to hatchbreak) is red. Falls
+    back to grey when the field is absent/unparseable so the line just reads as neutral detail."""
+    if score is None:
+        return overlay.COLOR_GREY
+    try:
+        frac = float(score)
+    except (ValueError, TypeError):
+        return overlay.COLOR_GREY
+    if frac >= 0.8:
+        return overlay.COLOR_GREEN
+    if frac >= 0.4:
+        return overlay.COLOR_AMBER
+    return overlay.COLOR_RED
+
+
 def _parse_api_error(status: int, body_bytes: bytes) -> ApiError:
     """Parse a server error response into an ApiError. Falls back gracefully if the body
     isn't the expected JSON shape (e.g. nginx 502, network proxy interception)."""
@@ -695,14 +725,14 @@ def _test_overlay_known() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 3× · last 8 days ago", color=overlay.COLOR_GREEN)
+    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 3× · last 8 days ago", color=overlay.COLOR_GREEN, extra_text="75% compliant", extra_color=overlay.COLOR_AMBER)
 
 
 def _test_overlay_cooldown() -> None:
     if not overlay.is_available():
         _overlay_not_available_msg()
         return
-    overlay.show_scan_result("TEST CMDR", "ON COOLDOWN", subtext="last robbed 2 hours ago", color=overlay.COLOR_AMBER)
+    overlay.show_scan_result("TEST CMDR", "ON COOLDOWN", subtext="last robbed 2 hours ago", color=overlay.COLOR_AMBER, extra_text="100% compliant", extra_color=overlay.COLOR_GREEN)
 
 
 def _test_clogger_mild() -> None:
@@ -731,6 +761,13 @@ def _test_overlay_client_clogger() -> None:
         _overlay_not_available_msg()
         return
     overlay.show_scan_result("TEST CMDR", _clogger_overlay_label(8), subtext="robbed 2× · score 8", color=overlay.COLOR_RED)
+
+
+def _test_overlay_low_compliance() -> None:
+    if not overlay.is_available():
+        _overlay_not_available_msg()
+        return
+    overlay.show_scan_result("TEST CMDR", "KNOWN CLIENT", subtext="robbed 4× · last 3 days ago", color=overlay.COLOR_GREEN, extra_text="0% compliant", extra_color=overlay.COLOR_RED)
 
 
 def _test_overlay_newtarget() -> None:
@@ -778,6 +815,7 @@ def _test_overlay_toast_duplicate() -> None:
 _TEST_OVERLAY_OPTIONS = [
     ("Scan: known client",        _test_overlay_known),
     ("Scan: cooldown",            _test_overlay_cooldown),
+    ("Scan: low compliance",      _test_overlay_low_compliance),
     ("Scan: new target",          _test_overlay_newtarget),
     ("Scan: clogger (mild)",      _test_clogger_mild),
     ("Scan: clogger (moderate)",  _test_clogger_moderate),
@@ -1076,10 +1114,18 @@ def _lookup_client_worker(cmdr_name: str) -> None:
     on_cooldown = False
     last_robbed = ""
     times_robbed = 0
+    compliance = ""
+    compliance_color = overlay.COLOR_GREY
     if client:
         on_cooldown = bool(client.get("onCooldown"))
         last_robbed = _fmt_relative_time(client.get("lastRobbedAt"))
         times_robbed = client.get("timesRobbed", 0)
+        compliance = _fmt_compliance(client.get("complianceScore"))
+        compliance_color = _compliance_color(client.get("complianceScore"))
+
+    # Panel is a single-color tk label, so compliance rides inline there; the overlay renders
+    # it on its own line (see overlay calls below) so it can be red/amber/green on its own.
+    compliance_suffix = f" · {compliance}" if compliance else ""
 
     clogger_score = clogger.get("score", 0) if clogger else 0
     is_clogger = clogger_score > 0
@@ -1088,8 +1134,8 @@ def _lookup_client_worker(cmdr_name: str) -> None:
     # Clogger overrides scan-label colour even when client info is present.
     if client:
         client_msg = (
-            f"⛔ ON COOLDOWN — last robbed {last_robbed}" if on_cooldown
-            else f"✓ client (robbed {times_robbed}×, last {last_robbed})"
+            f"⛔ ON COOLDOWN — last robbed {last_robbed}{compliance_suffix}" if on_cooldown
+            else f"✓ client (robbed {times_robbed}×, last {last_robbed}{compliance_suffix})"
         )
         panel_color = "red" if is_clogger else ("orange" if on_cooldown else "green")
         _set_scan(cmdr_name, client_msg, color=panel_color)
@@ -1119,10 +1165,10 @@ def _lookup_client_worker(cmdr_name: str) -> None:
     elif client:
         if on_cooldown:
             if _overlay_on("scan"):
-                overlay.show_scan_result(cmdr_name, "ON COOLDOWN", subtext=f"last robbed {last_robbed}", color=overlay.COLOR_AMBER)
+                overlay.show_scan_result(cmdr_name, "ON COOLDOWN", subtext=f"last robbed {last_robbed}", color=overlay.COLOR_AMBER, extra_text=compliance, extra_color=compliance_color)
         else:
             if _overlay_on("scan"):
-                overlay.show_scan_result(cmdr_name, "KNOWN CLIENT", subtext=f"robbed {times_robbed}× · last {last_robbed}", color=overlay.COLOR_GREEN)
+                overlay.show_scan_result(cmdr_name, "KNOWN CLIENT", subtext=f"robbed {times_robbed}× · last {last_robbed}", color=overlay.COLOR_GREEN, extra_text=compliance, extra_color=compliance_color)
 
 
 def submit_plunder(payload: Dict[str, Any]) -> Tuple[bool, str]:

@@ -13,7 +13,7 @@ The plugin lives inside the EDMC main window. From top to bottom:
 - **Status line** — shows `DavyJones: ready` when idle, or a short error if the API can't be reached.
 - **Connection line** — your CMDR name and squadron, confirmed by the API after a successful key check. A green dot means connected; grey means not yet verified.
 - **HUD line** — whether EDMCModernOverlay is detected. Shows `HUD: on` when active.
-- **Last scan** — updated every time a CMDR scan completes. Includes name, status (known client / on cooldown / unknown / clogger), and time since last robbery.
+- **Last scan** — updated every time a CMDR scan completes. Includes name, status (known client / on cooldown / unknown / clogger), time since last robbery, and the client's compliance rate (how often they complied rather than hatchbroke).
 
 The four buttons open the respective windows described below. The crosshair icon on the right opens the Clogger report window.
 

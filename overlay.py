@@ -45,6 +45,7 @@ _ID_SCAN_ACCENT = "davyjones_scan_accent"
 _ID_SCAN_VERDICT = "davyjones_scan_verdict"
 _ID_SCAN_NAME = "davyjones_scan_name"
 _ID_SCAN_DETAIL = "davyjones_scan_detail"
+_ID_SCAN_EXTRA = "davyjones_scan_extra"
 _ID_TOAST_ACCENT = "davyjones_toast_accent"
 _ID_TOAST_TEXT = "davyjones_toast_text"
 _ID_TOAST_SUB = "davyjones_toast_sub"
@@ -142,20 +143,28 @@ def set_ttls(scan: int, toast: int) -> None:
 
 
 def show_scan_result(cmdr_name: str, state: str, subtext: str = "",
-                     color: str = COLOR_GREEN) -> None:
+                     color: str = COLOR_GREEN,
+                     extra_text: str = "", extra_color: str = COLOR_GREY) -> None:
     """Display a CMDR scan result as a color-coded card (BGS-Tally inspired):
 
         ▍ KNOWN CLIENT              <- verdict: large, in the status color (lead with the decision)
         ▍ CMDR Hadfield            <- who: white, confirmation
         ▍ robbed 3× · last 8d ago  <- why: dim grey context
+        ▍ 75% compliant            <- optional extra line in its own (e.g. red/amber/green) color
 
     `state` is the verdict and drives both the colored header and the accent rule. `cmdr_name`
-    is rendered as a quiet confirmation line beneath it, and `subtext` is the grey context."""
+    is rendered as a quiet confirmation line beneath it, and `subtext` is the grey context.
+    `extra_text`, when given, is rendered as a final line in `extra_color` — the overlay can't
+    color a fragment of a line, so a value-coded figure (e.g. compliance) needs its own line."""
     verdict = (state or "?").upper()
     name = (cmdr_name or "?").strip()
 
-    # Accent rule spans the whole block: verdict (large) + name + optional context line.
-    last_offset = _LINE_AFTER_TITLE + (_LINE_HEIGHT if subtext else 0)
+    # Lines below the large verdict stack at _LINE_HEIGHT intervals: name, [subtext], [extra].
+    detail_offset = _LINE_AFTER_TITLE
+    extra_offset = detail_offset + (_LINE_HEIGHT if subtext else 0)
+    last_offset = extra_offset + (_LINE_HEIGHT if extra_text else 0)
+
+    # Accent rule spans the whole block: verdict (large) + name + optional context/extra lines.
     block_h = last_offset + _NORMAL_CAP
     _wrapper._send_rect(
         _ID_SCAN_ACCENT, _X, _Y_SCAN, _ACCENT_W, block_h, fill=color, ttl=_ttl_scan,
@@ -173,7 +182,13 @@ def show_scan_result(cmdr_name: str, state: str, subtext: str = "",
     if subtext:
         _wrapper._send_text(
             _ID_SCAN_DETAIL, subtext, COLOR_GREY,
-            _TEXT_X, _Y_SCAN + _LINE_AFTER_TITLE + _LINE_HEIGHT,
+            _TEXT_X, _Y_SCAN + detail_offset + _LINE_HEIGHT,
+            ttl=_ttl_scan, size="normal",
+        )
+    if extra_text:
+        _wrapper._send_text(
+            _ID_SCAN_EXTRA, extra_text, extra_color,
+            _TEXT_X, _Y_SCAN + extra_offset + _LINE_HEIGHT,
             ttl=_ttl_scan, size="normal",
         )
 
