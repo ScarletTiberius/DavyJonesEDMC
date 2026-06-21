@@ -101,6 +101,19 @@ class _OverlayWrapper:
             except Exception:
                 logger.exception("Overlay send_message failed")
 
+    def _clear_text(self, msg_id: str) -> None:
+        """Blank a previously-sent text line by id. The overlay replaces by id, so a card that
+        uses fewer lines than the one before it must actively clear the now-unused ids — otherwise
+        the stale line stays visible for the rest of its TTL (e.g. a clogger grade lingering under
+        a NEW TARGET). Sending empty text with a 1s ttl overwrites and lets it expire immediately."""
+        if not self._ensure_loaded():
+            return
+        with self._lock:
+            try:
+                self._overlay.send_message(msg_id, "", COLOR_GREY, 0, 0, ttl=1, size="normal")
+            except Exception:
+                logger.exception("Overlay clear failed")
+
     def _send_rect(self, msg_id: str, x: int, y: int, w: int, h: int,
                    fill: str, ttl: int) -> None:
         """Draw a filled rect via send_shape (used for the thin left accent rule).
@@ -185,12 +198,18 @@ def show_scan_result(cmdr_name: str, state: str, subtext: str = "",
             _TEXT_X, _Y_SCAN + detail_offset + _LINE_HEIGHT,
             ttl=_ttl_scan, size="normal",
         )
+    else:
+        _wrapper._clear_text(_ID_SCAN_DETAIL)
     if extra_text:
         _wrapper._send_text(
             _ID_SCAN_EXTRA, extra_text, extra_color,
             _TEXT_X, _Y_SCAN + extra_offset + _LINE_HEIGHT,
             ttl=_ttl_scan, size="normal",
         )
+    else:
+        # Clear a lingering extra line from a prior card (e.g. clogger grade / compliance) so a
+        # shorter card like NEW TARGET doesn't leave a stale line dangling beneath it.
+        _wrapper._clear_text(_ID_SCAN_EXTRA)
 
 
 def show_toast(header: str, subtext: str = "",
