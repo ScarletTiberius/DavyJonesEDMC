@@ -142,20 +142,28 @@ def _compliance_color(score: Any) -> str:
     return overlay.COLOR_RED
 
 
-def _parse_api_error(status: int, body_bytes: bytes) -> ApiError:
+def _parse_api_error(status: int, body_bytes: bytes, headers: Any = None) -> ApiError:
     """Parse a server error response into an ApiError. Falls back gracefully if the body
-    isn't the expected JSON shape (e.g. nginx 502, network proxy interception)."""
+    isn't the expected JSON shape (e.g. nginx 502, network proxy interception).
+
+    Error bodies use either {"error": ...} or {"Error": ...} depending on endpoint — accept
+    both. A 429 also carries a Retry-After header (seconds); when present it's folded into
+    the message so callers don't need their own 429-specific handling."""
     try:
         body = json.loads(body_bytes.decode("utf-8", errors="replace") or "{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
         return ApiError(status, f"HTTP {status} (non-JSON response)")
-    message = body.get("error") or f"HTTP {status}"
+    message = body.get("error") or body.get("Error") or f"HTTP {status}"
     details = None
     raw_details = body.get("details")
     if isinstance(raw_details, dict):
         errs = raw_details.get("errors")
         if isinstance(errs, list):
             details = [str(e) for e in errs]
+    if status == 429 and headers is not None:
+        retry_after = headers.get("Retry-After")
+        if retry_after:
+            message = f"{message} Retry in {retry_after}s."
     return ApiError(status, message, details)
 
 
@@ -168,20 +176,6 @@ def _load_icon(size: int) -> Optional[tk.PhotoImage]:
         return tk.PhotoImage(file=path)
     except tk.TclError:
         logger.exception(f"Failed to load icon {path}")
-        return None
-
-
-def _load_skull_icon(target_px: int = 20) -> Optional[tk.PhotoImage]:
-    """Load target.png and scale it down to ~target_px square for use in a button."""
-    path = os.path.join(ICON_DIR, "target.png")
-    if not os.path.exists(path):
-        return None
-    try:
-        img = tk.PhotoImage(file=path)
-        factor = max(1, img.width() // target_px)
-        return img.subsample(factor) if factor > 1 else img
-    except tk.TclError:
-        logger.exception("Failed to load skull icon")
         return None
 
 
@@ -251,7 +245,6 @@ class PluginState:
         self.parent_frame: Optional[tk.Frame] = None
         self.main_icon_image: Optional[tk.PhotoImage] = None  # GC pin
         self.prefs_icon_image: Optional[tk.PhotoImage] = None  # GC pin
-        self.skull_icon_image: Optional[tk.PhotoImage] = None  # GC pin
 
         # Settings UI (created in plugin_prefs)
         self.api_base_var: Optional[tk.StringVar] = None
@@ -400,7 +393,7 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     state.clogger_label = tk.Label(frame, text="", anchor="w", fg="orange")
     # Not gridded initially — shown only when a clogger flag is active (see _set_clogger)
 
-    # Action row: My Plunder | Report Plunder | Add Client | [skull] Report Clogger
+    # Action row, grouped: [My Plunder]  ·  [Add plunder | Add Client | Add Clogger]
     action_row = tk.Frame(frame)
     action_row.grid(
         row=5, column=0, columnspan=text_col_start + 2, sticky="we", pady=(4, 0)
@@ -409,31 +402,30 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     state.stats_button = tk.Button(
         action_row, text="My Plunder", command=_open_stats_window
     )
-    state.stats_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
+    state.stats_button.pack(side="left", expand=True, fill="x")
     _add_tooltip(state.stats_button, "your ledger entries and stats")
 
+    ttk.Separator(action_row, orient="vertical").pack(side="left", fill="y", padx=6)
+
+    report_group = tk.Frame(action_row)
+    report_group.pack(side="left", fill="x", expand=True)
+
     state.report_button = tk.Button(
-        action_row, text="Report Plunder", command=_open_report_window
+        report_group, text="Add plunder", command=_open_report_window
     )
     state.report_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
     _add_tooltip(state.report_button, "Tell us about your spoils, cmdr")
 
     state.add_client_button = tk.Button(
-        action_row, text="Add Client", command=_open_add_client_window
+        report_group, text="Add Client", command=_open_add_client_window
     )
     state.add_client_button.pack(side="left", expand=True, fill="x", padx=(0, 2))
     _add_tooltip(state.add_client_button, "Give players that donated a pass")
 
-    state.skull_icon_image = _load_skull_icon()
-    if state.skull_icon_image:
-        state.clogger_button = tk.Button(
-            action_row, image=state.skull_icon_image, command=_open_clogging_window
-        )
-    else:
-        state.clogger_button = tk.Button(
-            action_row, text="⊕", command=_open_clogging_window
-        )
-    state.clogger_button.pack(side="left", padx=(0, 0))
+    state.clogger_button = tk.Button(
+        report_group, text="Add Clogger", command=_open_clogging_window
+    )
+    state.clogger_button.pack(side="left", expand=True, fill="x")
     _add_tooltip(state.clogger_button, "Report Clogger — report players that combat logged")
 
     if theme is not None:
@@ -1277,6 +1269,23 @@ def submit_add_client(cmdr_name: str, complied: bool) -> Tuple[bool, str]:
     return True, f"Added {cmdr_name} to the client list."
 
 
+def fetch_client_reports() -> List[Dict[str, Any]]:
+    """Called from AddClientWindow's "My Reports" tab. The window already runs this in a
+    thread. Server caches this response for 15 min per caller, so there's no need for any
+    client-side throttling beyond the existing "fetch on button press" convention."""
+    if not state.api_key:
+        raise RuntimeError("No API key configured.")
+    try:
+        result = _api_get("/me/clients-reports")
+    except ApiError as e:
+        raise RuntimeError(e.user_message()) from e
+    reports = result.get("clients") if isinstance(result, dict) else result
+    reports = reports or []
+    for rep in reports:
+        rep["reportedAtRelative"] = _fmt_relative_time(rep.get("reportedAt"))
+    return reports
+
+
 def submit_clogging_report(payload: Dict[str, Any]) -> Tuple[bool, str]:
     """Called from CloggingWindow. Synchronous from caller's perspective (window runs it in a thread)."""
     if not state.api_key:
@@ -1338,7 +1347,7 @@ def _api_get(path: str) -> Optional[Dict[str, Any]]:
             body = resp.read().decode("utf-8")
             return json.loads(body) if body else None
     except urlerror.HTTPError as e:
-        raise _parse_api_error(e.code, e.read() if e.fp else b"") from e
+        raise _parse_api_error(e.code, e.read() if e.fp else b"", e.headers) from e
 
 
 def _api_post(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1359,7 +1368,7 @@ def _api_post(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             body = resp.read().decode("utf-8")
             return json.loads(body) if body else None
     except urlerror.HTTPError as e:
-        raise _parse_api_error(e.code, e.read() if e.fp else b"") from e
+        raise _parse_api_error(e.code, e.read() if e.fp else b"", e.headers) from e
 
 
 def _api_put(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1380,7 +1389,7 @@ def _api_put(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             body = resp.read().decode("utf-8")
             return json.loads(body) if body else None
     except urlerror.HTTPError as e:
-        raise _parse_api_error(e.code, e.read() if e.fp else b"") from e
+        raise _parse_api_error(e.code, e.read() if e.fp else b"", e.headers) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1487,6 +1496,7 @@ def _open_add_client_window() -> None:
         cmdr=state.cmdr or "",
         scan_history=_recent_scans_desc(),
         submit_callback=submit_add_client,
+        fetch_reports_callback=fetch_client_reports,
     )
 
 

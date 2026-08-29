@@ -345,10 +345,10 @@ class CloggingWindow(tk.Toplevel):
         if not reports:
             t.label(self._reports_inner, text="No recent reports (last 30 days).",
                     fg=t.PALETTE["fg_dim"]).pack(pady=16)
-            self._load_status.config(text="0 reports", fg=t.PALETTE["fg_dim"])
+            self._load_status.config(text="0 reports (last 30 days)", fg=t.PALETTE["fg_dim"])
             return
 
-        self._load_status.config(text=f"{len(reports)} report(s)", fg=t.PALETTE["fg_dim"])
+        self._load_status.config(text=f"{len(reports)} report(s) (last 30 days)", fg=t.PALETTE["fg_dim"])
 
         for i, rep in enumerate(reports):
             row_bg = t.PALETTE["bg_alt"] if i % 2 else t.PALETTE["bg"]
