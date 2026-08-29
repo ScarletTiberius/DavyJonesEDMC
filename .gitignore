@@ -71,3 +71,5 @@ thirdparty/
 
 # Release prep
 *.zip
+
+/disable-auto-update.txt

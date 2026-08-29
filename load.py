@@ -13,6 +13,7 @@ import os
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from datetime import datetime, timezone
 from tkinter import messagebox, ttk
 from typing import Optional, Dict, Any, List, Tuple
@@ -26,15 +27,21 @@ try:
 except ImportError:
     theme = None  # graceful degradation if EDMC internals change
 
+try:
+    from ttkHyperlinkLabel import HyperlinkLabel  # type: ignore  # EDMC core widget
+except ImportError:
+    HyperlinkLabel = None  # graceful degradation if EDMC internals change
+
 from cargo_window import CargoReportWindow
 from stats_window import StatsWindow
 from add_client_window import AddClientWindow
 from clogging_window import CloggingWindow
 import dj_theme as t
 import overlay
+import updater
 
 PLUGIN_NAME = "DavyJones"
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.3.0"
 API_BASE_DEFAULT = "https://davyjones.org/api"
 HTTP_TIMEOUT = 8  # seconds
 
@@ -238,6 +245,7 @@ class PluginState:
         self.network_label: Optional[tk.Label] = None
         self.scan_label: Optional[tk.Label] = None
         self.clogger_label: Optional[tk.Label] = None
+        self.update_label: Optional[tk.Widget] = None  # HyperlinkLabel, or plain Label fallback
         self.report_button: Optional[tk.Button] = None
         self.stats_button: Optional[tk.Button] = None
         self.add_client_button: Optional[tk.Button] = None
@@ -396,7 +404,7 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     # Action row, grouped: [My Plunder]  ·  [Add plunder | Add Client | Add Clogger]
     action_row = tk.Frame(frame)
     action_row.grid(
-        row=5, column=0, columnspan=text_col_start + 2, sticky="we", pady=(4, 0)
+        row=5, column=0, columnspan=text_col_start + 3, sticky="we", pady=(4, 0)
     )
 
     state.stats_button = tk.Button(
@@ -436,12 +444,29 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
             except Exception:
                 logger.exception("Failed to register button with EDMC theme")
 
+    # Version label — top-right corner of the section. Doubles as a link to the latest
+    # GitHub release, and turns red with an "update ready" message once
+    # _check_for_update_async() finds one.
+    version_col = text_col_start + 2
+    if HyperlinkLabel is not None:
+        state.update_label = HyperlinkLabel(
+            frame, text=f"v{PLUGIN_VERSION}",
+            background=nb.Label(frame).cget("background"),
+            url=updater.RELEASES_PAGE_URL, underline=True,
+        )
+    else:
+        state.update_label = tk.Label(frame, text=f"v{PLUGIN_VERSION}", fg="blue", cursor="hand2")
+        state.update_label.bind("<Button-1>", lambda e: webbrowser.open(updater.RELEASES_PAGE_URL))
+    state.update_label.grid(row=0, column=version_col, sticky="ne", padx=(6, 2))
+
     frame.columnconfigure(text_col_start + 1, weight=1)
 
     # Fetch profile after the frame (and its labels) are fully wired into the widget tree.
     # plugin_start3 runs before plugin_app, so the label widget doesn't exist yet there.
     if state.api_key:
         frame.after(0, _fetch_profile_async)
+
+    frame.after(0, _check_for_update_async)
 
     return frame
 
@@ -1426,6 +1451,46 @@ def _fetch_profile_worker() -> None:
     except Exception:
         logger.exception("Profile fetch failed")
         _set_network_label("○ not connected", color="gray")
+
+
+def _set_update_label(text: str, url: Optional[str], color: str) -> None:
+    if not state.update_label:
+        return
+
+    def _apply():
+        try:
+            state.update_label.configure(text=text, foreground=color)
+            if url and hasattr(state.update_label, "url"):
+                state.update_label.url = url
+            elif url and HyperlinkLabel is None:
+                state.update_label.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+        except Exception:
+            logger.exception("Failed to update version label")
+
+    state.update_label.after(0, _apply)
+
+
+def _check_for_update_async() -> None:
+    threading.Thread(target=_check_for_update_worker, daemon=True).start()
+
+
+def _check_for_update_worker() -> None:
+    try:
+        result = updater.check_and_update(PLUGIN_DIR, PLUGIN_VERSION, f"DavyJonesEDMC/{PLUGIN_VERSION}")
+    except Exception:
+        logger.exception("Update check failed")
+        return
+
+    if not result.checked_ok:
+        return
+
+    if result.installed:
+        logger.info(f"DavyJones v{result.remote_version} downloaded — restart EDMC to apply")
+        _set_update_label(f"Update to v{result.remote_version} ready — restart EDMC", result.release_url, "red")
+    elif result.update_found:
+        logger.info(f"DavyJones v{result.remote_version} available but auto-install failed: {result.error}")
+        _set_update_label(f"Update available: v{result.remote_version} (click to download)", result.release_url, "#cc7a00")
+    # else: already on the latest release — leave the default "vX.Y.Z" label as-is.
 
 
 def _set_scan(cmdr_name: str, text: str, color: str = "black") -> None:

@@ -30,6 +30,9 @@ Your personal ledger: total tonnage, profit, most-looted commodity, PvP/PvE brea
 **In-game HUD overlay (optional)**
 If [EDMCModernOverlay](https://github.com/SweetJonnySauce/EDMCModernOverlay) is installed, scan results and confirmations are pushed directly to your HUD as colour-coded banners. No alt-tabbing required. The plugin works normally without it.
 
+**Self-updating**
+On startup the plugin checks the [latest GitHub release](https://github.com/ScarletTiberius/DavyJonesEDMC/releases/latest) in the background. If a newer version is available it's downloaded and extracted over the plugin folder automatically — restart EDMC to pick it up. A backup of the previous version is kept under `backups/` (last 3 kept). The version label in the EDMC panel doubles as a link to the release page, and turns red when an update is ready. To disable this (e.g. for local development), drop an empty `disable-auto-update.txt` file in the plugin folder.
+
 ## Requirements
 
 - [Elite Dangerous Market Connector](https://github.com/EDCD/EDMarketConnector) v5+
@@ -78,6 +81,7 @@ DavyJones/
 ├── add_client_window.py  # Add client window
 ├── clogging_window.py    # Clogger report window
 ├── dj_theme.py           # Shared palette and widget factories
+├── updater.py            # Self-update: checks GitHub releases, downloads, extracts
 └── icons/                # Plugin icons (red, white, orange variants)
 ```
 
