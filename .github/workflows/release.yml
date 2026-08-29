@@ -15,6 +15,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify PLUGIN_VERSION matches tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          EXPECTED="${TAG#v}"
+          ACTUAL=$(grep -oP '(?<=^PLUGIN_VERSION = ")[^"]+' load.py)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::Could not find PLUGIN_VERSION in load.py"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::load.py has PLUGIN_VERSION = \"$ACTUAL\" but the tag is \"$TAG\" (expected \"$EXPECTED\"). Update PLUGIN_VERSION in load.py, commit, and re-tag."
+            exit 1
+          fi
+          echo "PLUGIN_VERSION ($ACTUAL) matches tag ($TAG)"
+
       - name: Build zip
         run: |          
           mkdir -p dist/build/DavyJones
