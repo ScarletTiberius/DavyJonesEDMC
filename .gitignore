@@ -21,6 +21,7 @@ venv/
 ENV/
 
 # Unit test / coverage reports
+/tests/
 htmlcov/
 .tox/
 .nox/

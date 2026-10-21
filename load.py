@@ -41,7 +41,7 @@ import overlay
 import updater
 
 PLUGIN_NAME = "DavyJones"
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.3.1"
 API_BASE_DEFAULT = "https://davyjones.org/api"
 HTTP_TIMEOUT = 8  # seconds
 
@@ -1342,12 +1342,14 @@ def fetch_clogging_reports() -> List[Dict[str, Any]]:
 
 
 def update_clogging_report(
-    report_id: int, proof_url: Optional[str], shared: bool
+    report_id: int, proof_url: Optional[str], shared: bool, edit_token: str
 ) -> Tuple[bool, str]:
     """Called from CloggingWindow. The window already runs this in a thread."""
     if not state.api_key:
         return False, "No API key configured."
-    payload = {"proofUrl": proof_url, "shared": shared}
+    if not edit_token:
+        return False, "Reload the reports before editing. An edit token is required."
+    payload = {"proofUrl": proof_url, "shared": shared, "editToken": edit_token}
     try:
         _api_put(f"/clogging/{report_id}", payload)
     except ApiError as e:

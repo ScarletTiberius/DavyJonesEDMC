@@ -23,7 +23,7 @@ class CloggingWindow(tk.Toplevel):
         scan_history: List[Dict[str, Any]],
         submit_callback: Callable[[Dict[str, Any]], Tuple[bool, str]],
         fetch_reports_callback: Callable[[], List[Dict[str, Any]]],
-        update_callback: Callable[[int, Optional[str], bool], Tuple[bool, str]],
+        update_callback: Callable[[int, Optional[str], bool, str], Tuple[bool, str]],
     ):
         super().__init__(parent)
         self.title(f"⚠  REPORT CLOGGER  //  {cmdr or 'CMDR'}")
@@ -414,11 +414,15 @@ class CloggingWindow(tk.Toplevel):
             return
 
         report_id = self._selected_report.get("id")
+        edit_token = self._selected_report.get("editToken") or ""
+        if not edit_token:
+            messagebox.showerror("DavyJones", "Reload the reports before editing. An edit token is required.")
+            return
         proof_url = self.edit_proof_var.get().strip() or None
         shared = self.edit_shared_var.get() == "shared"
 
         def worker():
-            ok, msg = self.update_callback(report_id, proof_url, shared)
+            ok, msg = self.update_callback(report_id, proof_url, shared, edit_token)
             self.after(0, lambda: self._handle_update_result(ok, msg))
 
         threading.Thread(target=worker, daemon=True).start()
